@@ -1,0 +1,51 @@
+openapi: 3.1.0
+info:
+  title: curricula.live API
+  version: 0.1.0
+  description: Bootstrap contract. Knowledge endpoints return 503 until an RDF publication is connected.
+servers:
+  - url: /
+paths:
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      responses:
+        '200':
+          description: API bootstrap status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, stage, knowledgeAvailable]
+                properties:
+                  service: { type: string }
+                  stage: { type: string }
+                  knowledgeAvailable: { type: boolean }
+  /api/v1/concepts:
+    get:
+      operationId: listConcepts
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200': { description: Concepts from the validated RDF store }
+        '400': { description: Invalid limit }
+        '503': { description: RDF dataset unavailable }
+  /api/v1/concepts/{slug}:
+    get:
+      operationId: getConcept
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Concept }
+        '404': { description: No such concept }
+        '503': { description: RDF dataset unavailable }
+  /api/v1/search:
+    get:
+      operationId: search
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200': { description: Search results from the validated RDF store }
+        '400': { description: Invalid search query }
+        '503': { description: RDF dataset unavailable }
