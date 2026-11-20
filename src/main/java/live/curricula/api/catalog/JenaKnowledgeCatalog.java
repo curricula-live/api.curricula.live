@@ -3,22 +3,29 @@ package live.curricula.api.catalog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import live.curricula.api.rdf.RdfOntologyRegistry;
 import live.curricula.api.rdf.RdfReleaseStore;
 import org.apache.jena.query.QueryExecutionFactory;
 import org.apache.jena.query.ParameterizedSparqlString;
 import org.apache.jena.query.QuerySolution;
 import org.apache.jena.rdf.model.Literal;
 import org.apache.jena.rdf.model.Resource;
-import org.apache.jena.vocabulary.RDF;
-import org.apache.jena.vocabulary.SKOS;
 
 /** Read-only RDF-native query adapter. Never relies on default-graph unions. */
 public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
     private static final String NS = RdfReleaseStore.BASE;
     private static final String ASSERTED = NS + "graph/asserted";
     private final RdfReleaseStore store;
+    private final RdfOntologyRegistry ontologies;
 
-    public JenaKnowledgeCatalog(RdfReleaseStore store) { this.store = store; }
+    public JenaKnowledgeCatalog(RdfReleaseStore store) {
+        this(store, RdfOntologyRegistry.DEFAULT);
+    }
+
+    public JenaKnowledgeCatalog(RdfReleaseStore store, RdfOntologyRegistry ontologies) {
+        this.store = store;
+        this.ontologies = ontologies;
+    }
 
     public static String slugFromIri(String iri) {
         int index = iri.lastIndexOf('/');
@@ -110,21 +117,10 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
     }
 
     public Optional<ConceptSummary> findByIri(String iri) {
-        if (iri == null || !iri.startsWith(NS + "concept/")) return Optional.empty();
-        return store.read(dataset -> {
-            var model = dataset.getNamedModel(ASSERTED);
-            var resource = model.getResource(iri);
-            if (!model.contains(resource, RDF.type, SKOS.Concept)) return Optional.empty();
-            var properties = resource.listProperties(SKOS.prefLabel);
-            Literal label = null;
-            while (properties.hasNext()) {
-                var candidate = properties.nextStatement().getObject();
-                if (candidate.isLiteral()) {
-                    label = candidate.asLiteral();
-                    if ("en".equalsIgnoreCase(label.getLanguage())) break;
-                }
-            }
-            return label == null ? Optional.empty() : Optional.of(summary(resource, label));
-        });
+        var producer = ontologies.ownerOf(iri);
+        if (producer.isEmpty()) return Optional.empty();
+        return store.read(dataset -> ontologies.concept(dataset, iri)
+                .flatMap(concept -> RdfOntologyRegistry.preferredLabel(concept)
+                        .map(label -> new ConceptSummary(iri, producer.get().localName(iri), label))));
     }
 }

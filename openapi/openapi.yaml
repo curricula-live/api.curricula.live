@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: curricula.live API
   version: 0.1.0
-  description: Bootstrap contract. Knowledge endpoints return 503 until an RDF publication is connected.
+  description: Read-only catalog contract. Knowledge endpoints return 503 until an RDF publication is connected.
 servers:
   - url: /
 paths:
@@ -59,45 +59,142 @@ paths:
     get:
       operationId: getCanonicalConceptByIri
       parameters:
-        - { name: iri, in: query, required: true, schema: { type: string, format: uri } }
+        - { $ref: '#/components/parameters/ConceptIri' }
       responses:
         '200': { description: Canonical concept with permanent IRI and preferred label }
+        '400': { description: Invalid IRI syntax }
         '404': { description: Canonical IRI not found }
         '503': { description: Validated RDF dataset unavailable }
   /api/v1/concepts/{slug}/relationships:
     get:
       operationId: getRecordedRelationships
-      description: Directed recorded statements separated by asserted, inferred and alignment graph.
+      description: Ordered RDF adjacency by graph layer, predicate, subject and object IRI. Offsets apply after filtering.
       parameters:
-        - { name: slug, in: path, required: true, schema: { type: string } }
-        - { name: graph, in: query, schema: { type: string, enum: [all, asserted, inferred, alignments], default: all } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+        - { $ref: '#/components/parameters/ConceptSlug' }
+        - { $ref: '#/components/parameters/Graph' }
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Domain' }
+        - { $ref: '#/components/parameters/RelationshipOffset' }
+        - { $ref: '#/components/parameters/RelationshipLimit' }
       responses:
-        '200': { description: Exact RDF predicate, subject, object, graph, direction and category }
+        '200':
+          description: Recorded statements with direction relative to the selected concept
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Relationship' }
         '400': { description: Invalid query }
         '404': { description: Concept not found }
-        '503': { description: RDF unavailable }
+        '503': { description: Validated RDF dataset unavailable }
+  /api/v1/concepts/by-iri/relationships:
+    get:
+      operationId: getRecordedRelationshipsByIri
+      description: Ordered RDF adjacency by graph layer, predicate, subject and object IRI. Offsets apply after filtering.
+      parameters:
+        - { $ref: '#/components/parameters/ConceptIri' }
+        - { $ref: '#/components/parameters/Graph' }
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Domain' }
+        - { $ref: '#/components/parameters/RelationshipOffset' }
+        - { $ref: '#/components/parameters/RelationshipLimit' }
+      responses:
+        '200':
+          description: Recorded statements with direction relative to the selected concept
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Relationship' }
+        '400': { description: Invalid query }
+        '404': { description: Concept not found }
+        '503': { description: Validated RDF dataset unavailable }
   /api/v1/concepts/{slug}/provenance:
     get:
       operationId: getConceptProvenance
-      description: Reified assertion provenance and source witnesses.
+      description: Reified statements and evidence witnesses for outgoing, incoming or all assertions.
       parameters:
-        - { name: slug, in: path, required: true, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+        - { $ref: '#/components/parameters/ConceptSlug' }
+        - { $ref: '#/components/parameters/EvidenceLimit' }
+        - { $ref: '#/components/parameters/Direction' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Adjacent' }
       responses:
-        '200': { description: Reified assertions with source and evidence identifiers }
+        '200':
+          description: Assertions ordered by assertion IRI
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Evidence' }
+        '400': { description: Invalid query }
         '404': { description: Concept not found }
+        '503': { description: Validated RDF dataset unavailable }
+  /api/v1/concepts/by-iri/provenance:
+    get:
+      operationId: getConceptProvenanceByIri
+      description: Reified statements and evidence witnesses for outgoing, incoming or all assertions.
+      parameters:
+        - { $ref: '#/components/parameters/ConceptIri' }
+        - { $ref: '#/components/parameters/EvidenceLimit' }
+        - { $ref: '#/components/parameters/Direction' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Adjacent' }
+      responses:
+        '200':
+          description: Assertions ordered by assertion IRI
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Evidence' }
+        '400': { description: Invalid query }
+        '404': { description: Concept not found }
+        '503': { description: Validated RDF dataset unavailable }
   /api/v1/concepts/{slug}/neighborhood:
     get:
       operationId: getRecordedNeighborhood
-      description: Bounded traversal, with no inferred transitive closure of scientific predicates.
+      description: Bounded breadth-first traversal over recorded facts. Each named-graph statement occurs once.
       parameters:
-        - { name: slug, in: path, required: true, schema: { type: string } }
-        - { name: depth, in: query, schema: { type: integer, minimum: 1, maximum: 5, default: 1 } }
+        - { $ref: '#/components/parameters/ConceptSlug' }
+        - { $ref: '#/components/parameters/Depth' }
+        - { $ref: '#/components/parameters/Graph' }
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Domain' }
+        - { $ref: '#/components/parameters/NeighborhoodLimit' }
       responses:
-        '200': { description: Root IRI, nodes, recorded directed edges and truncation status }
-        '400': { description: Unsupported traversal depth }
+        '200':
+          description: A directed graph with canonical node metadata and truncation status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Neighborhood' }
+        '400': { description: Invalid query }
         '404': { description: Concept not found }
+        '503': { description: Validated RDF dataset unavailable }
+  /api/v1/concepts/by-iri/neighborhood:
+    get:
+      operationId: getRecordedNeighborhoodByIri
+      description: Bounded breadth-first traversal over recorded facts. Each named-graph statement occurs once.
+      parameters:
+        - { $ref: '#/components/parameters/ConceptIri' }
+        - { $ref: '#/components/parameters/Depth' }
+        - { $ref: '#/components/parameters/Graph' }
+        - { $ref: '#/components/parameters/Kind' }
+        - { $ref: '#/components/parameters/Predicate' }
+        - { $ref: '#/components/parameters/Domain' }
+        - { $ref: '#/components/parameters/NeighborhoodLimit' }
+      responses:
+        '200':
+          description: A directed graph with canonical node metadata and truncation status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Neighborhood' }
+        '400': { description: Invalid query }
+        '404': { description: Concept not found }
+        '503': { description: Validated RDF dataset unavailable }
   /api/v1/relationships/search:
     get:
       operationId: searchRecordedConnections
@@ -132,3 +229,123 @@ paths:
                         objectLabel: { type: string }
         '400': { description: Invalid text or limit }
         '503': { description: RDF dataset unavailable or search exceeded its query timeout }
+components:
+  parameters:
+    ConceptSlug:
+      name: slug
+      in: path
+      required: true
+      description: Local slug in formal sciences. Use a canonical IRI to address other namespaces.
+      schema: { type: string, pattern: '^[a-z0-9][-a-z0-9]*$' }
+    ConceptIri:
+      name: iri
+      in: query
+      required: true
+      schema: { type: string, format: iri, maxLength: 2048 }
+    Graph:
+      name: graph
+      in: query
+      schema: { type: string, enum: [all, asserted, inferred, alignments], default: all }
+    Kind:
+      name: kind
+      in: query
+      schema: { type: string, enum: [all, taxonomy, scientific, association, mapping, other], default: all }
+    Predicate:
+      name: predicate
+      in: query
+      description: Exact RDF predicate IRI.
+      schema: { type: string, format: iri, maxLength: 2048 }
+    Domain:
+      name: domain
+      in: query
+      description: Restricts adjacent concepts to a SKOS scheme identified by IRI or local scheme name. The root remains visible.
+      schema: { type: string, maxLength: 2048 }
+    RelationshipOffset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 10000, default: 0 }
+    RelationshipLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    NeighborhoodLimit:
+      name: limit
+      in: query
+      description: Maximum recorded edges. Traversal also caps returned nodes at 200.
+      schema: { type: integer, minimum: 1, maximum: 1000, default: 1000 }
+    Depth:
+      name: depth
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 5, default: 1 }
+    EvidenceLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+    Direction:
+      name: direction
+      in: query
+      schema: { type: string, enum: [outgoing, incoming, all], default: outgoing }
+    Adjacent:
+      name: adjacent
+      in: query
+      description: IRI of the opposite endpoint of the reified RDF statement.
+      schema: { type: string, format: iri, maxLength: 2048 }
+  schemas:
+    Relationship:
+      type: object
+      required: [subject, predicate, object, graph, direction, kind, objectLabel, graphIri]
+      properties:
+        subject: { type: string, format: iri }
+        predicate: { type: string, format: iri }
+        object: { type: string, format: iri }
+        graph: { type: string, enum: [asserted, inferred, alignments] }
+        direction:
+          description: Recorded orientation relative to the focus. For multi-hop edges, the focus is the first incident node visited.
+          enum: [outgoing, incoming]
+        kind: { type: string, enum: [taxonomy, scientific, association, mapping, other] }
+        objectLabel:
+          type: string
+          description: Preferred label of the adjacent concept, or its IRI when no label is known.
+        graphIri: { type: string, format: iri }
+    Neighborhood:
+      type: object
+      required: [root, nodes, edges, depth, truncated, nodeDetails]
+      properties:
+        root: { type: string, format: iri }
+        nodes:
+          type: array
+          maxItems: 200
+          items: { type: string, format: iri }
+        edges:
+          type: array
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/Relationship' }
+        depth: { type: integer, minimum: 1, maximum: 5 }
+        truncated: { type: boolean }
+        nodeDetails:
+          type: array
+          description: Metadata for nodes with canonically registered concept IRIs.
+          items:
+            type: object
+            required: [iri, label, slug, domains]
+            properties:
+              iri: { type: string, format: iri }
+              label: { type: string }
+              slug:
+                type: [string, "null"]
+                description: Formal-sciences slug when available.
+              domains:
+                type: array
+                items: { type: string, format: iri }
+    Evidence:
+      type: object
+      required: [assertionIri, predicate, object, source, witness, identifier, subject, graphIri]
+      properties:
+        assertionIri: { type: string, format: iri }
+        predicate: { type: [string, "null"], format: iri }
+        object: { type: [string, "null"] }
+        source: { type: [string, "null"] }
+        witness: { type: [string, "null"] }
+        identifier: { type: [string, "null"] }
+        subject: { type: [string, "null"], format: iri }
+        graphIri: { type: string, format: iri }
