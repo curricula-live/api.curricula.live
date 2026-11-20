@@ -98,3 +98,37 @@ paths:
         '200': { description: Root IRI, nodes, recorded directed edges and truncation status }
         '400': { description: Unsupported traversal depth }
         '404': { description: Concept not found }
+  /api/v1/relationships/search:
+    get:
+      operationId: searchRecordedConnections
+      description: Searches canonical concept-to-concept statements by endpoint labels, endpoint slugs or predicate name. Exact matches rank first. The source and target preserve recorded RDF direction, and each named graph is reported separately.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 160 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Bounded matching connections from the active RDF publication, ordered by match rank, subject, predicate, object and graph
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, connections]
+                properties:
+                  query: { type: string }
+                  connections:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [subject, predicate, object, graph, subjectSlug, subjectLabel, objectSlug, objectLabel]
+                      properties:
+                        subject: { type: string, format: uri }
+                        predicate: { type: string, format: uri }
+                        object: { type: string, format: uri }
+                        graph: { type: string, enum: [asserted, inferred, alignments] }
+                        subjectSlug: { type: string }
+                        subjectLabel: { type: string }
+                        objectSlug: { type: string }
+                        objectLabel: { type: string }
+        '400': { description: Invalid text or limit }
+        '503': { description: RDF dataset unavailable or search exceeded its query timeout }

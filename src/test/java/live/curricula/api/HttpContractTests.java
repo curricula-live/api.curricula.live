@@ -33,6 +33,12 @@ class HttpContractTests {
         assertEquals(400, get("/api/v1/search?q=").statusCode());
         assertEquals(503, get("/api/v1/search?q=binary").statusCode());
     }
+    @Test void connectionSearchChecksInputAndHonorsUnavailableStore() throws Exception {
+        assertEquals(400, get("/api/v1/relationships/search").statusCode());
+        assertEquals(400, get("/api/v1/relationships/search?q=%21").statusCode());
+        assertEquals(400, get("/api/v1/relationships/search?q=uses&limit=101").statusCode());
+        assertEquals(503, get("/api/v1/relationships/search?q=uses").statusCode());
+    }
     @Test void actuatorHealth() throws Exception {
         assertEquals(200, get("/actuator/health").statusCode());
     }
