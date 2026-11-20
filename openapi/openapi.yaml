@@ -49,3 +49,52 @@ paths:
         '200': { description: Search results from the validated RDF store }
         '400': { description: Invalid search query }
         '503': { description: RDF dataset unavailable }
+  /api/v1/knowledge/publication:
+    get:
+      operationId: getActivePublication
+      description: Reports the active pinned RDF publication and named graph counts.
+      responses:
+        '200': { description: Publication status, including unconfigured state }
+  /api/v1/concepts/by-iri:
+    get:
+      operationId: getCanonicalConceptByIri
+      parameters:
+        - { name: iri, in: query, required: true, schema: { type: string, format: uri } }
+      responses:
+        '200': { description: Canonical concept with permanent IRI and preferred label }
+        '404': { description: Canonical IRI not found }
+        '503': { description: Validated RDF dataset unavailable }
+  /api/v1/concepts/{slug}/relationships:
+    get:
+      operationId: getRecordedRelationships
+      description: Directed recorded statements separated by asserted, inferred and alignment graph.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: graph, in: query, schema: { type: string, enum: [all, asserted, inferred, alignments], default: all } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200': { description: Exact RDF predicate, subject, object, graph, direction and category }
+        '400': { description: Invalid query }
+        '404': { description: Concept not found }
+        '503': { description: RDF unavailable }
+  /api/v1/concepts/{slug}/provenance:
+    get:
+      operationId: getConceptProvenance
+      description: Reified assertion provenance and source witnesses.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 100 } }
+      responses:
+        '200': { description: Reified assertions with source and evidence identifiers }
+        '404': { description: Concept not found }
+  /api/v1/concepts/{slug}/neighborhood:
+    get:
+      operationId: getRecordedNeighborhood
+      description: Bounded traversal, with no inferred transitive closure of scientific predicates.
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: depth, in: query, schema: { type: integer, minimum: 1, maximum: 5, default: 1 } }
+      responses:
+        '200': { description: Root IRI, nodes, recorded directed edges and truncation status }
+        '400': { description: Unsupported traversal depth }
+        '404': { description: Concept not found }
