@@ -3,13 +3,15 @@ package live.curricula.api.rdf;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.Map;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -26,64 +28,126 @@ public final class RdfReleaseVerifier {
     private RdfReleaseVerifier() { }
 
     public static VerifiedRelease verify(Path root, String pinnedManifestSha256) throws IOException {
-        if (pinnedManifestSha256 == null || !pinnedManifestSha256.matches("[0-9a-f]{64}")) {
+        JsonNode manifest = pinnedManifest(root, pinnedManifestSha256);
+        VerifiedRelease release = parseManifest(root, pinnedManifestSha256, manifest);
+        JsonNode artifacts = manifest.path("artifacts");
+        for (String name : FILES) {
+            if (!artifacts.path(name).asText().equals(sha256(regularFile(root, name)))) {
+                throw new IOException("Modified artifact: " + name);
+            }
+        }
+        JsonNode report = readJson(regularFile(root, "validation-report.json"));
+        if (!conforms(report)) {
+            throw new IOException("Validation report does not conform");
+        }
+        return release;
+    }
+
+    static VerifiedRelease verifyManifest(Path root, String pinnedManifestSha256) throws IOException {
+        return parseManifest(root, pinnedManifestSha256, pinnedManifest(root, pinnedManifestSha256));
+    }
+
+    private static JsonNode pinnedManifest(Path root, String pinnedManifestSha256) throws IOException {
+        if (!validDigest(pinnedManifestSha256)) {
             throw new IllegalArgumentException("An explicit pinned manifest SHA-256 is required");
         }
-        root = root.toRealPath();
-        Path manifestPath = root.resolve("manifest.json");
-        if (!sha256(manifestPath).equals(pinnedManifestSha256)) {
+        byte[] bytes = Files.readAllBytes(regularFile(root, "manifest.json"));
+        if (!HexFormat.of().formatHex(sha256Digest().digest(bytes)).equals(pinnedManifestSha256)) {
             throw new IOException("Pinned manifest SHA-256 mismatch");
         }
-        JsonNode manifest = JSON.readTree(Files.readString(manifestPath));
+        return parseJson(bytes);
+    }
+
+    private static VerifiedRelease parseManifest(Path root, String digest, JsonNode manifest) throws IOException {
         if (!CONTRACT.equals(manifest.path("contract").asText())) {
             throw new IOException("Incompatible RDF release contract");
         }
         if (!NAMESPACE.equals(manifest.path("namespace").asText())) {
             throw new IOException("Unexpected canonical RDF namespace");
         }
-        if (!manifest.path("conforms").asBoolean(false)) {
+        if (!conforms(manifest)) {
             throw new IOException("Ontology manifest does not conform");
         }
+
         JsonNode artifacts = manifest.path("artifacts");
-        if (artifacts.size() != FILES.size()) {
+        if (!artifacts.isObject() || artifacts.size() != FILES.size()) {
             throw new IOException("Unexpected artifact roster");
         }
         for (String name : FILES) {
-            String expected = artifacts.path(name).asText();
-            if (!expected.matches("[0-9a-f]{64}") || !expected.equals(sha256(root.resolve(name)))) {
-                throw new IOException("Missing, invalid, or modified artifact: " + name);
+            if (!artifacts.path(name).isString() || !validDigest(artifacts.path(name).asText())) {
+                throw new IOException("Invalid artifact digest: " + name);
             }
         }
-        JsonNode report = JSON.readTree(Files.readString(root.resolve("validation-report.json")));
-        if (!report.path("conforms").asBoolean(false)) {
-            throw new IOException("Validation report does not conform");
-        }
-        var counts = new LinkedHashMap<String, Long>();
+
         JsonNode graphCounts = manifest.path("counts");
-        if (graphCounts.size() != GRAPHS.size()) {
+        if (!graphCounts.isObject() || graphCounts.size() != GRAPHS.size()) {
             throw new IOException("Unexpected named-graph roster");
         }
+        var counts = new LinkedHashMap<String, Long>();
         for (String graph : GRAPHS) {
-            long n = graphCounts.path(graph).asLong(-1);
-            if (n < 0) throw new IOException("Invalid graph count: " + graph);
-            counts.put(graph, n);
+            JsonNode n = graphCounts.path(graph);
+            if (!n.isIntegralNumber() || !n.canConvertToLong() || n.asLong() < 0) {
+                throw new IOException("Invalid graph count: " + graph);
+            }
+            counts.put(graph, n.asLong());
         }
-        int concepts = manifest.path("concepts").asInt(-1);
-        if (concepts < 0) throw new IOException("Invalid concept count");
-        String version = manifest.path("version").asText();
-        if (version.isBlank()) throw new IOException("Missing ontology version");
-        return new VerifiedRelease(root, version, NAMESPACE,
-                pinnedManifestSha256, Map.copyOf(counts), concepts);
+        JsonNode concepts = manifest.path("concepts");
+        if (!concepts.isIntegralNumber() || !concepts.canConvertToInt() || concepts.asInt() < 0) {
+            throw new IOException("Invalid concept count");
+        }
+        JsonNode version = manifest.path("version");
+        if (!version.isString() || version.asText().isBlank()) throw new IOException("Missing ontology version");
+        return new VerifiedRelease(root, version.asText(), NAMESPACE,
+                digest, Map.copyOf(counts), concepts.asInt());
+    }
+
+    private static boolean conforms(JsonNode node) {
+        JsonNode conforms = node.path("conforms");
+        return conforms.isBoolean() && conforms.asBoolean();
+    }
+
+    private static JsonNode readJson(Path path) throws IOException {
+        return parseJson(Files.readAllBytes(path));
+    }
+
+    private static JsonNode parseJson(byte[] bytes) throws IOException {
+        try {
+            JsonNode parsed = JSON.readTree(bytes);
+            if (parsed == null || !parsed.isObject()) throw new IOException("Expected an RDF metadata object");
+            return parsed;
+        } catch (JacksonException e) {
+            throw new IOException("Invalid RDF publication JSON", e);
+        }
+    }
+
+    static Path regularFile(Path root, String name) throws IOException {
+        Path file = root.resolve(name);
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Missing or non-regular RDF publication file: " + name);
+        }
+        return file;
+    }
+
+    static boolean validDigest(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
+    }
+
+    static boolean validCommit(String value) {
+        return value != null && value.matches("[0-9a-fA-F]{40}");
     }
 
     public static String sha256(Path path) throws IOException {
+        MessageDigest digest = sha256Digest();
+        try (InputStream input = Files.newInputStream(path)) {
+            byte[] buffer = new byte[65536];
+            for (int n; (n = input.read(buffer)) != -1;) digest.update(buffer, 0, n);
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private static MessageDigest sha256Digest() {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream input = Files.newInputStream(path)) {
-                byte[] buffer = new byte[65536];
-                for (int n; (n = input.read(buffer)) != -1;) digest.update(buffer, 0, n);
-            }
-            return HexFormat.of().formatHex(digest.digest());
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("JVM lacks SHA-256", ex);
         }

@@ -5,12 +5,25 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HttpContractTests {
+    @TempDir static Path rdfStore;
+
+    @DynamicPropertySource
+    static void storePath(DynamicPropertyRegistry registry) {
+        registry.add("CURRICULA_RDF_STORE", () -> rdfStore.toString());
+    }
+
     @LocalServerPort int port;
     private final HttpClient client = HttpClient.newHttpClient();
 
