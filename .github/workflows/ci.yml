@@ -1,10 +1,10 @@
-name: Java API CI
+name: Java RDF API CI
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, 'feat/**']
   pull_request:
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,5 +13,9 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Verify
+      - name: Download immutable RDF integration fixture
+        run: bash scripts/fetch-integration-fixture.sh
+      - name: Verify Java and real RDF integration
+        env:
+          CURRICULA_RDF_FIXTURE: target/ontology-fixture
         run: ./mvnw --batch-mode --no-transfer-progress verify
