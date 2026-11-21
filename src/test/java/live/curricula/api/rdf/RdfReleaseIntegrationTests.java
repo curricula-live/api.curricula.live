@@ -201,6 +201,23 @@ class RdfReleaseIntegrationTests {
         }
     }
 
+    @Test void importsReviewedComputingEvidenceFrom080() throws Exception {
+        Path current = fixture("CURRICULA_RDF_FIXTURE_080", "target/ontology-fixture-0.8.0");
+        String digest = "25152ce02ee0b6b0cf6039b74d9d5d41cb058571cb05097845d86eb88bbaf8ba";
+        String commit = "17c4c1db6901381b41bd377fb8c24c2f868c1f23";
+        try (var store = new RdfReleaseStore(temp.resolve("store080"))) {
+            store.ingest(fixture("CURRICULA_RDF_FIXTURE_070", "target/ontology-fixture-0.7.0"),
+                    MANIFEST_070, COMMIT_070);
+            Set<String> preceding = concepts(store);
+            assertImported(store, current, digest, commit, "0.8.0");
+            var now = concepts(store);
+            assertTrue(now.containsAll(preceding));
+            assertTrue(now.size() > preceding.size());
+            assertScientificEdge(store, "binary-search-tree", "supportsOperation", "rank-in-ordered-set");
+            assertEquals(MANIFEST_070, store.rollback().manifestSha256());
+        }
+    }
+
     @Test void abruptExitLeavesAnEntireOldOrNewSelection() throws Exception {
         Path source = fixture();
         Path updated = fixture050();

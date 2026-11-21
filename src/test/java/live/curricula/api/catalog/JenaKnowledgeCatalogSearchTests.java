@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 class JenaKnowledgeCatalogSearchTests {
     private static final String BASE = RdfReleaseStore.BASE;
 
-    @Test void indexedSearchRetainsTermFieldsOrderingAndDisplayLanguage() {
+    @Test void indexedSearchRanksExactLabelsAndRetainsTermFieldsAndDisplayLanguage() {
         Dataset dataset = DatasetFactory.createTxnMem();
         try {
             dataset.begin(ReadWrite.WRITE);
@@ -34,6 +34,7 @@ class JenaKnowledgeCatalogSearchTests {
                 concept(asserted, "c", "Balance", "en")
                         .addProperty(DCTerms.identifier, asserted.createResource("https://example.org/needle"));
                 concept(asserted, "d", "needle", "en");
+                concept(asserted, "inmultire-polinoame", "Înmulțire polinoame", "en");
                 concept(asserted, "foreign", "Foreign", "fr").addProperty(SKOS.altLabel, "needle");
                 asserted.createResource(BASE + "concept/no-type")
                         .addProperty(SKOS.altLabel, "needle").addProperty(SKOS.prefLabel, "Ignored");
@@ -54,10 +55,12 @@ class JenaKnowledgeCatalogSearchTests {
                 }
             });
             var catalog = new JenaKnowledgeCatalog(store);
-            assertEquals(List.of("a", "b", "c", "d", "z"),
+            assertEquals(List.of("d", "a", "z", "b", "c"),
                     catalog.search(" NEEDLE ", 25).stream().map(ConceptSummary::slug).toList());
-            assertEquals(List.of("a", "b"),
+            assertEquals(List.of("d", "a"),
                     catalog.search("needle", 2).stream().map(ConceptSummary::slug).toList());
+            assertEquals(List.of("inmultire-polinoame"),
+                    catalog.search("inmultire_polinoame", 25).stream().map(ConceptSummary::slug).toList());
             assertEquals(List.of(), catalog.search("needle\" } UNION {", 25));
         } finally {
             dataset.close();

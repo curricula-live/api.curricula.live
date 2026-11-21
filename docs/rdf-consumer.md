@@ -10,8 +10,9 @@ The Java API consumes the [formal-sciences RDF release contract](https://github.
 | 0.5.0 | `cbdf2c4de01f561a0af7e9be0a6db4e8d1fe577a` | `c7ffe29c6b34ee974187c77b73db737cbd7eb848c641daf7db963fc623173f51` | 2,667 | 399 | 219 |
 | 0.6.0 | `2da2f7676dd1a68fc8dc01427a5240882c7f951a` | `ed70ec240ee39fc1b10026848b4cc4b561d50e8344323c1d69e71d8a5b337b54` | 2,751 | 534 | 230 |
 | 0.7.0 | `ed04aa8c2a39ddc89203c3905381a88d489733dc` | `0f76ecfd7e9cf2e6d92d6d76b0d09523c34cf5e776442760e2f7109610424162` | 2,849 | 702 | 234 |
+| 0.8.0 | `17c4c1db6901381b41bd377fb8c24c2f868c1f23` | `25152ce02ee0b6b0cf6039b74d9d5d41cb058571cb05097845d86eb88bbaf8ba` | 2,928 | 653 | 234 |
 
-These snapshots are from [ontology PR #1](https://github.com/curricula-live/ontology-formal-sciences/pull/1). The last pin was the inspected PR head. When adding a fixture, pin the commit and manifest together. The test script downloads each immutable GitHub commit archive and extracts the RDF package and published SPARQL queries, and verifies all artifact digests. No producer Python modules are required.
+These snapshots are from [ontology PR #1](https://github.com/curricula-live/ontology-formal-sciences/pull/1). The v0.8.0 pin was the inspected PR head during Phase 3. When adding a fixture, pin the commit and manifest together. The test script downloads each immutable GitHub commit archive and extracts the RDF package and published SPARQL queries, and verifies all artifact digests. No producer Python modules are required.
 
 ```sh
 bash scripts/fetch-integration-fixture.sh
@@ -19,6 +20,7 @@ CURRICULA_RDF_FIXTURE=target/ontology-fixture \
 CURRICULA_RDF_FIXTURE_050=target/ontology-fixture-0.5.0 \
 CURRICULA_RDF_FIXTURE_060=target/ontology-fixture-0.6.0 \
 CURRICULA_RDF_FIXTURE_070=target/ontology-fixture-0.7.0 \
+CURRICULA_RDF_FIXTURE_080=target/ontology-fixture-0.8.0 \
   ./mvnw -B -ntp verify
 ```
 

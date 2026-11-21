@@ -1,13 +1,16 @@
 package live.curricula.api.catalog;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.PriorityQueue;
-import java.util.Set;
+import java.util.Map;
+import java.util.TreeSet;
+import java.util.regex.Pattern;
 import live.curricula.api.rdf.RdfOntologyRegistry;
 import live.curricula.api.rdf.RdfReleaseStore;
 import org.apache.jena.query.QueryExecutionFactory;
@@ -31,6 +34,10 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
             (ConceptSummary concept) -> concept.label().toLowerCase(Locale.ROOT))
             .thenComparing(ConceptSummary::iri)
             .thenComparing(ConceptSummary::label);
+    private static final Pattern MARKS = Pattern.compile("\\p{M}+");
+    private static final Pattern SEPARATORS = Pattern.compile("[-_\\s]+");
+    private static final Comparator<Ranked> RANK_ORDER = Comparator.comparingInt(Ranked::rank).reversed()
+            .thenComparing(Ranked::concept, SEARCH_ORDER);
     private final RdfReleaseStore store;
     private final RdfOntologyRegistry ontologies;
 
@@ -93,48 +100,70 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
         });
     }
 
+    private record Ranked(ConceptSummary concept, int rank) { }
+
     @Override public List<ConceptSummary> search(String text, int limit) {
-        if (text == null || text.isBlank() || limit < 1 || limit > 100) {
-            throw new IllegalArgumentException("Invalid search query or limit");
+        if (text == null || text.isBlank() || text.codePointCount(0, text.length()) > 160
+                || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Provide searchable text of at most 160 characters and a limit of 1..100");
         }
-        String needle = text.trim().toLowerCase(Locale.ROOT);
+        String needle = normalize(text);
+        if (needle.isBlank()) return List.of();
         return store.read(dataset -> {
             Model asserted = dataset.getNamedModel(ASSERTED);
-            var best = new PriorityQueue<>(limit, SEARCH_ORDER.reversed());
-            for (Resource subject : matchingSubjects(asserted, needle)) {
+            var best = new PriorityQueue<>(limit, RANK_ORDER.reversed());
+            for (var match : matchingSubjects(asserted, needle).entrySet()) {
+                Resource subject = match.getKey();
                 if (!asserted.contains(subject, RDF.type, SKOS.Concept)) continue;
                 var labels = subject.listProperties(SKOS.prefLabel);
+                ConceptSummary selected = null;
                 try {
                     while (labels.hasNext()) {
                         if (!(labels.nextStatement().getObject() instanceof Literal label)
                                 || !displayLanguage(label)) continue;
-                        ConceptSummary candidate = summary(subject, label);
-                        if (best.size() < limit) {
-                            best.add(candidate);
-                        } else if (SEARCH_ORDER.compare(candidate, best.element()) < 0) {
-                            best.remove();
-                            best.add(candidate);
-                        }
+                        var candidate = summary(subject, label);
+                        if (selected == null || SEARCH_ORDER.compare(candidate, selected) < 0) selected = candidate;
                     }
                 } finally {
                     labels.close();
                 }
+                if (selected == null) continue;
+                var candidate = new Ranked(selected, match.getValue());
+                if (best.size() < limit) best.add(candidate);
+                else if (RANK_ORDER.compare(candidate, best.element()) < 0) {
+                    best.remove();
+                    best.add(candidate);
+                }
             }
-            return best.stream().sorted(SEARCH_ORDER).toList();
+            return best.stream().sorted(RANK_ORDER).map(Ranked::concept).toList();
         });
     }
 
-    /** Traverse each predicate's TDB2 range once, then resolve labels for matching subjects. */
-    private static Set<Resource> matchingSubjects(Model asserted, String needle) {
-        Set<Resource> matches = new HashSet<>();
+    /** Use each searchable predicate's TDB2 index and keep one relevance score per matching concept. */
+    private static Map<Resource, Integer> matchingSubjects(Model asserted, String needle) {
+        var matches = new HashMap<Resource, Integer>();
+        var concepts = asserted.listResourcesWithProperty(RDF.type, SKOS.Concept);
+        try {
+            while (concepts.hasNext()) {
+                Resource concept = concepts.next();
+                if (concept.isURIResource()) recordRank(matches, concept, rank(slugFromIri(concept.getURI()), needle, 2));
+            }
+        } finally {
+            concepts.close();
+        }
         for (Property property : SEARCH_PROPERTIES) {
+            int labelPriority = property.equals(SKOS.prefLabel) ? 2 : property.equals(SKOS.altLabel) ? 1 : 0;
             var terms = asserted.listStatements(null, property, (RDFNode) null);
             try {
                 while (terms.hasNext()) {
                     var statement = terms.nextStatement();
-                    if (statement.getSubject().isURIResource() && contains(statement.getObject(), needle)) {
-                        matches.add(statement.getSubject());
-                    }
+                    if (!statement.getSubject().isURIResource()) continue;
+                    String value = switch (statement.getObject()) {
+                        case Literal literal -> literal.getLexicalForm();
+                        case Resource resource when resource.isURIResource() -> resource.getURI();
+                        default -> "";
+                    };
+                    recordRank(matches, statement.getSubject(), rank(value, needle, labelPriority));
                 }
             } finally {
                 terms.close();
@@ -143,13 +172,43 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
         return matches;
     }
 
-    private static boolean contains(RDFNode term, String needle) {
-        return switch (term) {
-            case Literal literal -> literal.getLexicalForm().toLowerCase(Locale.ROOT).contains(needle);
-            case Resource resource when resource.isURIResource() ->
-                    resource.getURI().toLowerCase(Locale.ROOT).contains(needle);
-            default -> false;
-        };
+    private static void recordRank(Map<Resource, Integer> matches, Resource concept, int rank) {
+        if (rank > 0) matches.merge(concept, rank, Math::max);
+    }
+
+    private static int rank(String value, String needle, int labelPriority) {
+        String normalized = normalize(value);
+        if (!normalized.contains(needle)) return 0;
+        if (labelPriority == 0) return 1;
+        if (normalized.equals(needle)) return 3 + labelPriority;
+        return normalized.startsWith(needle) ? 3 : 2;
+    }
+
+    private static String normalize(String text) {
+        String folded = text.toLowerCase(Locale.ROOT);
+        if (folded.chars().anyMatch(character -> character > 127)) {
+            folded = MARKS.matcher(Normalizer.normalize(folded, Normalizer.Form.NFD)).replaceAll("");
+        }
+        return SEPARATORS.matcher(folded).replaceAll(" ").strip();
+    }
+
+    /** The v1 wire format lists canonical formal-sciences slugs without projecting RDF terms. */
+    public List<String> canonicalSlugs() {
+        return store.read(dataset -> {
+            var slugs = new TreeSet<String>();
+            var concepts = dataset.getNamedModel(ASSERTED).listResourcesWithProperty(RDF.type, SKOS.Concept);
+            try {
+                while (concepts.hasNext()) {
+                    Resource concept = concepts.next();
+                    if (concept.isURIResource() && RdfOntologyRegistry.FORMAL_SCIENCES.ownsConcept(concept.getURI())) {
+                        slugs.add(slugFromIri(concept.getURI()));
+                    }
+                }
+            } finally {
+                concepts.close();
+            }
+            return List.copyOf(slugs);
+        });
     }
 
     private static boolean displayLanguage(Literal label) {
