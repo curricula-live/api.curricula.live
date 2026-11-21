@@ -2,6 +2,7 @@ package live.curricula.api.http;
 
 import java.util.List;
 import live.curricula.api.catalog.ConceptSummary;
+import live.curricula.api.catalog.JenaKnowledgeCatalog;
 import live.curricula.api.catalog.KnowledgeCatalog;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,13 +21,16 @@ public class CatalogController {
 
     @GetMapping("/status")
     public Status status() {
-        return new Status("curricula-api", "bootstrap", catalog.available());
+        return new Status("curricula-api", catalog.available() ? "rdf-active" : "bootstrap", catalog.available());
     }
 
     @GetMapping("/concepts")
-    public List<ConceptSummary> concepts(@RequestParam(defaultValue = "25") int limit) {
+    public List<ConceptSummary> concepts(@RequestParam(defaultValue = "25") int limit,
+                                         @RequestParam(defaultValue = "0") int offset,
+                                         @RequestParam(required = false) String domain) {
         checkLimit(limit);
-        return catalog.list(limit);
+        if (offset < 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "offset cannot be negative");
+        return ((JenaKnowledgeCatalog)catalog).browse(domain, offset, limit);
     }
 
     @GetMapping("/concepts/{slug}")

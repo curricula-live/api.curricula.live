@@ -1,17 +1,59 @@
-name: Java API CI
+name: Java RDF API CI
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, 'feat/**']
   pull_request:
+permissions:
+  contents: read
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17@sha256:b60e90042aa6b8dbecd58e224b3e36114dbf8ad754465264c2476ad58a86e45c
+        env:
+          POSTGRES_USER: curricula_test
+          POSTGRES_PASSWORD: phase3-ci-only
+          POSTGRES_DB: curricula_test
+        ports: [5432/tcp]
+        options: >-
+          --health-cmd "pg_isready -U curricula_test -d curricula_test"
+          --health-interval 2s --health-timeout 5s --health-retries 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Verify
-        run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Check the pinned Maven installation
+        env:
+          MVNW_VERBOSE: "true"
+        run: ./mvnw --version
+      - name: Download immutable RDF integration fixtures
+        run: bash scripts/fetch-integration-fixture.sh
+      - name: Verify Java and real RDF integration
+        env:
+          CURRICULA_RDF_FIXTURE: target/ontology-fixture
+          CURRICULA_RDF_FIXTURE_050: target/ontology-fixture-0.5.0
+          CURRICULA_RDF_FIXTURE_060: target/ontology-fixture-0.6.0
+          CURRICULA_RDF_FIXTURE_070: target/ontology-fixture-0.7.0
+          CURRICULA_RDF_FIXTURE_080: target/ontology-fixture-0.8.0
+          CURRICULA_TEST_POSTGRES_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports[5432] }}/curricula_test
+          CURRICULA_TEST_POSTGRES_USER: curricula_test
+          CURRICULA_TEST_POSTGRES_PASSWORD: phase3-ci-only
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/curricula-maven.log"
+          if ./mvnw --batch-mode --no-transfer-progress --errors verify 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          {
+            echo '### Maven verification failure'
+            echo '```text'
+            awk '/^\[ERROR\] / && $0 !~ /https?:/ { print }' "$log" | tail -n 25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
