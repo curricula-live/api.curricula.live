@@ -4,14 +4,18 @@ import static live.curricula.api.rdf.RdfConnectionSearch.execute;
 import static live.curricula.api.rdf.RdfConnectionSearch.prepare;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.apache.jena.query.DatasetFactory;
 import org.apache.jena.rdf.model.Resource;
 import org.apache.jena.system.Txn;
 import org.apache.jena.vocabulary.RDF;
 import org.apache.jena.vocabulary.SKOS;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class RdfConnectionSearchTests {
     private static final String BASE = RdfReleaseStore.BASE;
@@ -57,16 +61,21 @@ class RdfConnectionSearchTests {
         }
     }
 
-    @Test
-    void findsVerifiedFormalSciencesConnection(@TempDir Path storePath) throws Exception {
-        String fixture = System.getenv("CURRICULA_RDF_FIXTURE_050");
-        org.junit.jupiter.api.Assumptions.assumeTrue(fixture != null && !fixture.isBlank(),
-                "Set CURRICULA_RDF_FIXTURE_050 to the immutable v0.5.0 distribution");
+    @ParameterizedTest
+    @ValueSource(strings = {"0.5.0", "0.6.0"})
+    void findsVerifiedFormalSciencesConnection(String version, @TempDir Path storePath) throws Exception {
+        boolean previous = version.equals("0.5.0");
+        String variable = previous ? "CURRICULA_RDF_FIXTURE_050" : "CURRICULA_RDF_FIXTURE_060";
+        String configured = System.getenv(variable);
+        Path fixture = Path.of(configured == null ? "target/ontology-fixture-" + version : configured);
+        if (configured == null) {
+            Assumptions.assumeTrue(Files.isDirectory(fixture), "Fetch immutable RDF fixtures");
+        }
         try (var store = new RdfReleaseStore(storePath)) {
-            store.ingest(Path.of(fixture),
-                    "c7ffe29c6b34ee974187c77b73db737cbd7eb848c641daf7db963fc623173f51",
-                    "cbdf2c4de01f561a0af7e9be0a6db4e8d1fe577a");
-            var matches = new RdfConnectionSearch(store).search("DPLL algorithm", 100);
+            store.ingest(fixture,
+                    previous ? RdfReleaseIntegrationTests.MANIFEST_050 : RdfReleaseIntegrationTests.MANIFEST_060,
+                    previous ? RdfReleaseIntegrationTests.COMMIT_050 : RdfReleaseIntegrationTests.COMMIT_060);
+            var matches = new RdfConnectionSearch(store).search("DPLL", 20);
             assertTrue(matches.stream().anyMatch(connection ->
                     connection.subjectSlug().equals("dpll-algorithm")
                             && connection.objectSlug().equals("boolean-satisfiability")
