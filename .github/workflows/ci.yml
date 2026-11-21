@@ -44,4 +44,16 @@ jobs:
           CURRICULA_TEST_POSTGRES_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports[5432] }}/curricula_test
           CURRICULA_TEST_POSTGRES_USER: curricula_test
           CURRICULA_TEST_POSTGRES_PASSWORD: phase3-ci-only
-        run: ./mvnw --batch-mode --no-transfer-progress --errors verify
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/curricula-maven.log"
+          if ./mvnw --batch-mode --no-transfer-progress --errors verify 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          {
+            echo '### Maven verification failure'
+            echo '```text'
+            awk '/^\[ERROR\] / && $0 !~ /https?:/ { print }' "$log" | tail -n 25
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
