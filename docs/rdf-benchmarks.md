@@ -75,3 +75,7 @@ Each pair gives p50 and p95 in milliseconds. Throughput summarizes the four-thre
 0.6.0 search allocation fell from 68.0 MB to 1.44 MB per request. The expanded dataset averaged 5.82 MB per search. Query-process peak RSS was 386 MiB on 0.6.0 and 465 MiB on the expanded dataset.
 
 Phase 2 checks all matching neighbors for deterministic selection and returns canonical node metadata. That extra work increases hop latency compared with the baseline. At a synthetic hub with 9,999 incoming edges, bounded one-hop traversal still averaged 31.4 MB of cumulative allocations per request. Highly connected nodes remain a distinct workload from typical exploration.
+
+## Follow-up connection search check
+
+On the same x86_64 cloud environment, the updated HTTP connection search returned the asserted DPLL-to-Boolean-satisfiability `solves` edge in one initial request and 20 requests across four workers per release. Parallel p95 was 378 ms on pinned v0.5.0 and 417 ms on pinned v0.6.0. The run used the packaged Spring applications and included local HTTP overhead. It covered one real search term; use the broader workload above for catalog and graph performance.

@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo=https://github.com/curricula-live/ontology-formal-sciences.git
+archive_base=https://codeload.github.com/curricula-live/ontology-formal-sciences/tar.gz
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-git init --quiet --bare "$scratch/source.git"
 
 fetch_fixture() {
     local commit=$1 manifest=$2 destination=$3
     local checkout="$scratch/$commit"
-    git --git-dir="$scratch/source.git" fetch --quiet --depth=1 --no-tags "$repo" "$commit"
+    local prefix="ontology-formal-sciences-$commit"
+    curl --fail --silent --show-error --location --retry 3 --connect-timeout 20 \
+        --proto '=https' --proto-redir '=https' "$archive_base/$commit" -o "$scratch/$commit.tar.gz"
     mkdir -p "$checkout"
-    git --git-dir="$scratch/source.git" archive "$commit" dist docs/queries | tar -x -C "$checkout"
+    tar --extract --gzip --file "$scratch/$commit.tar.gz" --directory "$checkout" --strip-components=1 \
+        "$prefix/dist" "$prefix/docs/queries"
     (cd "$checkout/dist" && printf '%s  manifest.json\n' "$manifest" | sha256sum --check)
     python3 - "$checkout/dist" <<'PY'
 import hashlib

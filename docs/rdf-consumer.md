@@ -11,7 +11,7 @@ The Java API consumes the [formal-sciences RDF release contract](https://github.
 | 0.6.0 | `2da2f7676dd1a68fc8dc01427a5240882c7f951a` | `ed70ec240ee39fc1b10026848b4cc4b561d50e8344323c1d69e71d8a5b337b54` | 2,751 | 534 | 230 |
 | 0.7.0 | `ed04aa8c2a39ddc89203c3905381a88d489733dc` | `0f76ecfd7e9cf2e6d92d6d76b0d09523c34cf5e776442760e2f7109610424162` | 2,849 | 702 | 234 |
 
-These snapshots are from [ontology PR #1](https://github.com/curricula-live/ontology-formal-sciences/pull/1). The last pin was the inspected PR head. When adding a fixture, pin the commit and manifest together. The test script fetches each commit through Git, extracts the RDF package and published SPARQL queries, and verifies all artifact digests. No producer Python modules are required.
+These snapshots are from [ontology PR #1](https://github.com/curricula-live/ontology-formal-sciences/pull/1). The last pin was the inspected PR head. When adding a fixture, pin the commit and manifest together. The test script downloads each immutable GitHub commit archive and extracts the RDF package and published SPARQL queries, and verifies all artifact digests. No producer Python modules are required.
 
 ```sh
 bash scripts/fetch-integration-fixture.sh
@@ -53,3 +53,7 @@ The HTTP catalog exposes bounded read queries, and accepts canonical RDF IRIs or
 The query registry recognizes disjoint producer namespaces and keeps a concept's canonical IRI independent of its slug or storage location. It can resolve and traverse explicitly recorded cross-source statements if those datasets are present. Persistent activation currently installs the formal-sciences v1 package. Add a new producer only after defining its immutable artifact schema, namespace and graph ownership, independent validated release record and activation policy. Reviewed alignments retain their source provenance.
 
 User accounts and teacher data require a separate transactional store. Establish identity and ownership before migrating user records. Authentication must validate issuer, audience and session state. The API should authorize teacher operations against the specific class, plan or resource, and authorize administration separately. Deployers retain a distinct RDF publication identity.
+
+## Dependency audit
+
+The November 21, 2026 Phase 2 audit scanned 82 resolved API runtime dependencies, 52 resolved web Maven runtime dependencies and HTMX 2.0.11. OSV-Scanner 2.7.1 found no matches against the GitHub-reviewed Maven and npm advisory snapshot. The template's HTMX SHA-384 matched the fetched asset. The audit covers application libraries. Recheck the image and host package inventory separately before an Oracle deployment. [Advisory snapshot](https://github.com/github/advisory-database/tree/cd5460053490e73af2f6d02982373c2765689598/advisories/github-reviewed)
