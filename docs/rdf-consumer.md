@@ -1,6 +1,6 @@
 # RDF producer–consumer integration
 
-The Java API consumes the [formal-sciences RDF release contract](https://github.com/curricula-live/ontology-formal-sciences/blob/2da2f7676dd1a68fc8dc01427a5240882c7f951a/docs/contract-v1.md). Its published package contains a manifest and five hashed artifacts. The four named graphs carry assertions, inferences, alignments and provenance. The default graph is empty. Producer review and a versioned GitHub release determine what may be used in production.
+The Java API consumes the [formal-sciences RDF release contract](https://github.com/curricula-live/ontology-formal-sciences/blob/ed04aa8c2a39ddc89203c3905381a88d489733dc/docs/contract-v1.md). Its published package contains a manifest and five hashed artifacts. The four named graphs carry assertions, inferences, alignments and provenance. The default graph is empty. Producer review and a versioned GitHub release determine what may be used in production.
 
 ## Pinned development fixtures
 
@@ -9,6 +9,7 @@ The Java API consumes the [formal-sciences RDF release contract](https://github.
 | 0.4.0 | `abbef1de99953316bcd0663f50f3a88a20d38c11` | `4cf71b7d381034596432d4e373dfa8d4509412f98d700b43c47d13d493284b42` | 2,590 | 274 | 210 |
 | 0.5.0 | `cbdf2c4de01f561a0af7e9be0a6db4e8d1fe577a` | `c7ffe29c6b34ee974187c77b73db737cbd7eb848c641daf7db963fc623173f51` | 2,667 | 399 | 219 |
 | 0.6.0 | `2da2f7676dd1a68fc8dc01427a5240882c7f951a` | `ed70ec240ee39fc1b10026848b4cc4b561d50e8344323c1d69e71d8a5b337b54` | 2,751 | 534 | 230 |
+| 0.7.0 | `ed04aa8c2a39ddc89203c3905381a88d489733dc` | `0f76ecfd7e9cf2e6d92d6d76b0d09523c34cf5e776442760e2f7109610424162` | 2,849 | 702 | 234 |
 
 These snapshots are from [ontology PR #1](https://github.com/curricula-live/ontology-formal-sciences/pull/1). The last pin was the inspected PR head. When adding a fixture, pin the commit and manifest together. The test script fetches each commit through Git, extracts the RDF package and published SPARQL queries, and verifies all artifact digests. No producer Python modules are required.
 
@@ -17,6 +18,7 @@ bash scripts/fetch-integration-fixture.sh
 CURRICULA_RDF_FIXTURE=target/ontology-fixture \
 CURRICULA_RDF_FIXTURE_050=target/ontology-fixture-0.5.0 \
 CURRICULA_RDF_FIXTURE_060=target/ontology-fixture-0.6.0 \
+CURRICULA_RDF_FIXTURE_070=target/ontology-fixture-0.7.0 \
   ./mvnw -B -ntp verify
 ```
 
@@ -24,7 +26,7 @@ Tests cover complete named graphs, manifest-driven counts, persistence of canoni
 
 ## Store operation and recovery
 
-Set `CURRICULA_RDF_STORE` to the persistent store directory. A service launched without an import loads the release already selected there. If the store is empty, the health endpoint reports process health and knowledge endpoints return HTTP 503. Use `/api/v1/status` to check knowledge readiness and the active pin.
+Set `CURRICULA_RDF_STORE` to the persistent store directory. A service launched without an import loads the release already selected there. If the store is empty, the health endpoint reports process health and knowledge endpoints return HTTP 503. Use `/api/v1/status` to check knowledge readiness and `/api/v1/knowledge/publication` to inspect the active pin.
 
 To activate a verified publication during a controlled startup, set:
 
@@ -42,7 +44,7 @@ To roll back, stop the owning API process and run the offline command as an oper
 CURRICULA_RDF_STORE=/path/to/store java -jar target/curricula-api-0.0.1-SNAPSHOT.jar rdf-rollback
 ```
 
-Restart the API using only the store configuration so startup does not reactivate a package through the import variables. Check the manifest digest and query results via the private API. Another offline rollback swaps back to the release just left. A previously installed digest keeps the producer commit recorded on its initial import when another producer commit has identical manifest bytes.
+Restart the API using only the store configuration so startup does not reactivate a package through the import variables. Check the manifest digest via `/api/v1/knowledge/publication` and issue a representative query via the private API. Another offline rollback swaps back to the release just left. A previously installed digest keeps the producer commit recorded on its initial import when another producer commit has identical manifest bytes.
 
 ## Access boundaries and additional producers
 

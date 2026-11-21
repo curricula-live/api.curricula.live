@@ -20,4 +20,5 @@ jobs:
           CURRICULA_RDF_FIXTURE: target/ontology-fixture
           CURRICULA_RDF_FIXTURE_050: target/ontology-fixture-0.5.0
           CURRICULA_RDF_FIXTURE_060: target/ontology-fixture-0.6.0
+          CURRICULA_RDF_FIXTURE_070: target/ontology-fixture-0.7.0
         run: ./mvnw --batch-mode --no-transfer-progress verify

@@ -27,6 +27,8 @@ class RdfReleaseIntegrationTests {
     static final String MANIFEST_050 = "c7ffe29c6b34ee974187c77b73db737cbd7eb848c641daf7db963fc623173f51";
     static final String COMMIT_060 = "2da2f7676dd1a68fc8dc01427a5240882c7f951a";
     static final String MANIFEST_060 = "ed70ec240ee39fc1b10026848b4cc4b561d50e8344323c1d69e71d8a5b337b54";
+    static final String COMMIT_070 = "ed04aa8c2a39ddc89203c3905381a88d489733dc";
+    static final String MANIFEST_070 = "0f76ecfd7e9cf2e6d92d6d76b0d09523c34cf5e776442760e2f7109610424162";
     @TempDir Path temp;
 
     private Path fixture() {
@@ -176,6 +178,26 @@ class RdfReleaseIntegrationTests {
             assertEquals(MANIFEST_060, store.status().manifestSha256());
             assertEquals(MANIFEST_050, store.rollback().manifestSha256());
             assertEquals(MANIFEST_060, store.ingest(v060, MANIFEST_060, COMMIT_060).manifestSha256());
+        }
+    }
+
+    @Test void upgradesToLatestProducerFixture() throws Exception {
+        Path v060 = fixture060();
+        Path v070 = fixture("CURRICULA_RDF_FIXTURE_070", "target/ontology-fixture-0.7.0");
+        Path storeDir = temp.resolve("latest-store");
+        try (var store = new RdfReleaseStore(storeDir)) {
+            store.ingest(v060, MANIFEST_060, COMMIT_060);
+            Set<String> concepts060 = concepts(store);
+            assertImported(store, v070, MANIFEST_070, COMMIT_070, "0.7.0");
+            Set<String> concepts070 = concepts(store);
+            assertTrue(concepts070.containsAll(concepts060));
+            assertTrue(concepts070.size() > concepts060.size());
+            assertScientificEdge(store, "fixed-input-halting-rice-proof", "proves",
+                    "fixed-input-halting-undecidability");
+        }
+        try (var store = new RdfReleaseStore(storeDir)) {
+            assertEquals(MANIFEST_070, store.status().manifestSha256());
+            assertEquals(MANIFEST_060, store.rollback().manifestSha256());
         }
     }
 

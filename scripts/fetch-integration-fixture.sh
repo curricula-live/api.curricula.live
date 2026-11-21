@@ -43,3 +43,6 @@ fetch_fixture cbdf2c4de01f561a0af7e9be0a6db4e8d1fe577a \
 fetch_fixture 2da2f7676dd1a68fc8dc01427a5240882c7f951a \
     ed70ec240ee39fc1b10026848b4cc4b561d50e8344323c1d69e71d8a5b337b54 \
     "${CURRICULA_RDF_FIXTURE_060:-target/ontology-fixture-0.6.0}"
+fetch_fixture ed04aa8c2a39ddc89203c3905381a88d489733dc \
+    0f76ecfd7e9cf2e6d92d6d76b0d09523c34cf5e776442760e2f7109610424162 \
+    "${CURRICULA_RDF_FIXTURE_070:-target/ontology-fixture-0.7.0}"
