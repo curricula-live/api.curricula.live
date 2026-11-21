@@ -214,6 +214,19 @@ class RdfReleaseIntegrationTests {
             assertTrue(now.containsAll(preceding));
             assertTrue(now.size() > preceding.size());
             assertScientificEdge(store, "binary-search-tree", "supportsOperation", "rank-in-ordered-set");
+            var catalog = new JenaKnowledgeCatalog(store);
+            assertFalse(catalog.documentation(RdfReleaseStore.BASE + "concept/abstract-transfer-function")
+                    .orElseThrow().definitions().isEmpty());
+            var citations = new RdfCitationCatalog(store);
+            var first = citations.sources(0, 1, digest);
+            assertEquals(1, first.results().size());
+            assertEquals(1, first.nextOffset());
+            assertNotEquals(first.results(), citations.sources(first.nextOffset(), 1, digest).results());
+            var source = "https://doi.org/10.3233/FAIA336";
+            var rows = citations.citations(source, "dpll-algorithm", 0, 25, digest).results();
+            assertTrue(rows.stream().anyMatch(row -> row.sourceIri().equals(source)
+                    && row.predicateIri().endsWith("/uses") && row.graphIri().endsWith("/provenance")));
+            assertThrows(RdfCitationCatalog.PublicationChanged.class, () -> citations.sources(0, 20, MANIFEST_070));
             assertEquals(MANIFEST_070, store.rollback().manifestSha256());
         }
     }

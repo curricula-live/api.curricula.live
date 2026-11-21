@@ -39,6 +39,11 @@ public final class RdfApiController {
         return catalog.findByIri(iri).orElseThrow(NoSuchElementException::new);
     }
 
+    @GetMapping("/concepts/{slug}/documentation")
+    public JenaKnowledgeCatalog.Documentation documentation(@PathVariable String slug) {
+        return catalog.documentation(iri(slug)).orElseThrow(NoSuchElementException::new);
+    }
+
     // Query records supply identical defaults and validation regardless of concept addressing.
     public record EdgeQuery(String graph, String kind, String predicate, String domain) {
         RelationshipFilter filter() {

@@ -6,6 +6,92 @@ info:
 servers:
   - url: /
 paths:
+  /:
+    get:
+      operationId: legacyDiscovery
+      responses:
+        '200': { description: Legacy service discovery document }
+  /health/:
+    get:
+      operationId: legacyHealth
+      responses:
+        '200': { description: Legacy process health response }
+  /v1/concepts/:
+    get:
+      operationId: listLegacyConceptSlugs
+      responses:
+        '200': { description: Canonical slugs from the active formal-sciences corpus in a results array }
+        '503': { description: RDF release unavailable }
+  /v1/concepts/{slug}/:
+    get:
+      operationId: getLegacyConceptSlug
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Canonical slug in the legacy concept wire shape }
+        '404': { description: No canonical concept with this slug }
+        '503': { description: RDF release unavailable }
+  /v1/search/:
+    get:
+      operationId: searchLegacyConceptSlugs
+      description: The concept projection uses formal-sciences canonical slugs. Connection categories require a reviewed relation UUID crosswalk.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 160 } }
+        - { name: category, in: query, schema: { type: string, enum: [all, concepts, connections], default: all } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200': { description: Legacy concepts-only search response }
+        '400': { description: Invalid query, category or limit }
+        '501': { description: A connection category requires the unavailable legacy UUID crosswalk }
+        '503': { description: RDF release unavailable }
+  /api/v1/concepts/{slug}/documentation:
+    get:
+      operationId: conceptDocumentation
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Canonical IRI and recorded SKOS definitions with language tags }
+        '404': { description: Unknown canonical concept }
+        '503': { description: RDF release unavailable }
+  /api/v1/scholarly/sources:
+    get:
+      operationId: browseRdfCitationSources
+      parameters:
+        - $ref: '#/components/parameters/EvidenceOffset'
+        - $ref: '#/components/parameters/EvidenceLimit'
+        - $ref: '#/components/parameters/EvidencePublication'
+      responses:
+        '200': { description: Source IRIs and assertion counts with release version, manifest digest and next offset }
+        '400': { description: Invalid pagination or publication pin }
+        '409': { description: Publication changed since the requested page }
+        '503': { description: Evidence unavailable }
+  /api/v1/scholarly/assertions:
+    get:
+      operationId: browseRdfCitationsBySource
+      parameters:
+        - { name: source, in: query, required: true, schema: { type: string, format: uri } }
+        - $ref: '#/components/parameters/EvidenceOffset'
+        - $ref: '#/components/parameters/EvidenceLimit'
+        - $ref: '#/components/parameters/EvidencePublication'
+      responses:
+        '200': { description: Reified citations for the recorded source, including typed object terms }
+        '400': { description: Invalid source IRI, pagination or publication pin }
+        '409': { description: Publication changed since the requested page }
+        '503': { description: Evidence unavailable }
+  /api/v1/concepts/{slug}/evidence:
+    get:
+      operationId: browseRdfConceptEvidence
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/EvidenceOffset'
+        - $ref: '#/components/parameters/EvidenceLimit'
+        - $ref: '#/components/parameters/EvidencePublication'
+      responses:
+        '200': { description: Recorded incoming and outgoing citations for the canonical concept }
+        '400': { description: Invalid slug, pagination or publication pin }
+        '404': { description: Unknown canonical concept }
+        '409': { description: Publication changed since the requested page }
+        '503': { description: Evidence unavailable }
   /api/v1/status:
     get:
       operationId: getStatus
@@ -231,6 +317,13 @@ paths:
         '503': { description: RDF dataset unavailable or search exceeded its query timeout }
 components:
   parameters:
+    EvidenceOffset: { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+    EvidenceLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+    EvidencePublication:
+      name: publication
+      in: query
+      description: Pin the active manifest digest across pagination.
+      schema: { type: string, pattern: '^[a-f0-9]{64}$' }
     ConceptSlug:
       name: slug
       in: path

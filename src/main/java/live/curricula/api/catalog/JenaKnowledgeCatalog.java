@@ -216,6 +216,28 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
         return language.isEmpty() || language.equals("en") || language.startsWith("en-");
     }
 
+    public record Definition(String text, String language) { }
+    public record Documentation(String iri, List<Definition> definitions) { }
+
+    public Optional<Documentation> documentation(String iri) {
+        if (ontologies.ownerOf(iri).isEmpty()) return Optional.empty();
+        return store.read(dataset -> ontologies.concept(dataset, iri).map(concept -> {
+            var definitions = new TreeSet<>(Comparator.comparing(Definition::language).thenComparing(Definition::text));
+            var terms = concept.listProperties(SKOS.definition);
+            try {
+                while (terms.hasNext()) {
+                    if (terms.next().getObject() instanceof Literal literal) {
+                        definitions.add(new Definition(literal.getString(), literal.getLanguage()));
+                        if (definitions.size() > 20) definitions.pollLast();
+                    }
+                }
+            } finally {
+                terms.close();
+            }
+            return new Documentation(iri, List.copyOf(definitions));
+        }));
+    }
+
     @Override public Optional<ConceptSummary> findBySlug(String slug) {
         if (slug == null || !slug.matches("[a-z0-9][-a-z0-9]*")) return Optional.empty();
         return findByIri(NS + "concept/" + slug);
