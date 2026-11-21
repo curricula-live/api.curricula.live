@@ -8,6 +8,17 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17@sha256:b60e90042aa6b8dbecd58e224b3e36114dbf8ad754465264c2476ad58a86e45c
+        env:
+          POSTGRES_USER: curricula_test
+          POSTGRES_PASSWORD: phase3-ci-only
+          POSTGRES_DB: curricula_test
+        ports: [5432/tcp]
+        options: >-
+          --health-cmd "pg_isready -U curricula_test -d curricula_test"
+          --health-interval 2s --health-timeout 5s --health-retries 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -30,4 +41,7 @@ jobs:
           CURRICULA_RDF_FIXTURE_060: target/ontology-fixture-0.6.0
           CURRICULA_RDF_FIXTURE_070: target/ontology-fixture-0.7.0
           CURRICULA_RDF_FIXTURE_080: target/ontology-fixture-0.8.0
+          CURRICULA_TEST_POSTGRES_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports[5432] }}/curricula_test
+          CURRICULA_TEST_POSTGRES_USER: curricula_test
+          CURRICULA_TEST_POSTGRES_PASSWORD: phase3-ci-only
         run: ./mvnw --batch-mode --no-transfer-progress --errors verify
