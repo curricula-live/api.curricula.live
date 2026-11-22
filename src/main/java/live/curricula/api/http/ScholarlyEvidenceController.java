@@ -25,15 +25,17 @@ public final class ScholarlyEvidenceController {
     @GetMapping("/api/v1/scholarly/sources")
     public Page<Source> sources(@RequestParam(defaultValue = "0") int offset,
                                 @RequestParam(defaultValue = "25") int limit,
-                                @RequestParam(required = false) String publication) {
-        return catalog.sources(offset, limit, publication);
+                                @RequestParam(required = false) String publication,
+                                @RequestParam(defaultValue = "formal-sciences") String producer) {
+        return catalog.sources(producer, offset, limit, publication);
     }
 
     @GetMapping("/api/v1/scholarly/assertions")
     public Page<Citation> assertions(@RequestParam String source, @RequestParam(defaultValue = "0") int offset,
                                      @RequestParam(defaultValue = "25") int limit,
-                                     @RequestParam(required = false) String publication) {
-        return catalog.citations(source, null, offset, limit, publication);
+                                     @RequestParam(required = false) String publication,
+                                     @RequestParam(defaultValue = "formal-sciences") String producer) {
+        return catalog.citations(producer, source, null, offset, limit, publication);
     }
 
     @GetMapping("/api/v1/concepts/{slug}/evidence")

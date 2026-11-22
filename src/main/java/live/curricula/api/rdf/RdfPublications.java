@@ -56,7 +56,9 @@ public final class RdfPublications implements RdfQueryStore, AutoCloseable {
         return result;
     }
 
-    @Override public RdfReleaseStore.Status status() { return store("formal-sciences").status(); }
+    @Override public RdfReleaseStore.Status status() { return status("formal-sciences"); }
+    @Override public RdfReleaseStore.Status status(String id) { return store(id).status(); }
+    @Override public <T> T readProducer(String id, Function<Dataset, T> query) { return store(id).read(query); }
     @Override public boolean available() { return stores.stream().anyMatch(RdfReleaseStore::available); }
     @Override public <T> T readFormal(Function<Dataset, T> query) { return store("formal-sciences").read(query); }
 

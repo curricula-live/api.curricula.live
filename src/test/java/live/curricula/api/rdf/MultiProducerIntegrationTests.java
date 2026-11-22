@@ -23,6 +23,7 @@ class MultiProducerIntegrationTests {
     private static final RdfOntologyRegistry.Producer FIRST = RdfOntologyRegistry.FORMAL_SCIENCES;
     private static final RdfOntologyRegistry.Producer SECOND = new RdfOntologyRegistry.Producer(
             "learning-fixture", "https://example.test/ontology/learning-fixture/");
+    private static final String CITATION = "https://example.test/isolated-fixture-source";
     private static final String EDGE = SECOND.namespace() + "vocab/recordedTestConnection";
     private static final RdfOntologyRegistry REGISTRY = new RdfOntologyRegistry(List.of(FIRST, SECOND));
 
@@ -58,6 +59,14 @@ class MultiProducerIntegrationTests {
         var catalog = new JenaKnowledgeCatalog(store, REGISTRY);
         assertEquals(first, catalog.findBySlug("shared").orElseThrow().iri());
         assertEquals(secondLabel, catalog.findByIri(second).orElseThrow().label());
+        var citations = new RdfCitationCatalog(store, REGISTRY);
+        var secondPublication = store.status(SECOND.id());
+        var listed = citations.sources(SECOND.id(), 0, 10, secondPublication.manifestSha256());
+        assertEquals(List.of(new RdfCitationCatalog.Source(CITATION, 1)), listed.results());
+        assertEquals(secondPublication.version(), listed.version());
+        var evidence = citations.citations(SECOND.id(), CITATION, null, 0, 10, listed.manifestSha256());
+        assertEquals(SECOND.graphIri("provenance"), evidence.results().getFirst().graphIri());
+        assertTrue(citations.sources(0, 10, null).results().isEmpty());
         assertEquals(java.util.Set.of(first, second), catalog.search("shared", 10, "all").stream()
                 .map(item -> item.iri()).collect(java.util.stream.Collectors.toSet()));
         var education = new RdfEducationCatalog(store, REGISTRY, SECOND.id()).context(first);
@@ -101,10 +110,22 @@ class MultiProducerIntegrationTests {
             triples.add(target + " " + iri(RdfEducationCatalog.VOCAB + "curriculumMapping") + " <https://example.test/test-standard>");
             triples.add(target + " " + iri(RdfEducationCatalog.VOCAB + "teachingNote") + " \"Test note\"@en");
         }
+        List<String> citations = List.of();
+        String provenance = iri(producer.graphIri("provenance"));
+        if (edge) {
+            String assertion = iri(producer.namespace() + "assertion/isolated-test");
+            String rdf = RDF_TYPE.substring(0, RDF_TYPE.length() - 4);
+            citations = List.of(
+                    assertion + " " + iri(RDF_TYPE) + " " + iri(rdf + "Statement"),
+                    assertion + " " + iri(rdf + "subject") + " " + subject,
+                    assertion + " " + iri(rdf + "predicate") + " " + iri(EDGE),
+                    assertion + " " + iri(rdf + "object") + " " + iri(FIRST.conceptIri("shared")),
+                    assertion + " <http://purl.org/dc/terms/source> " + iri(CITATION));
+        }
         Files.writeString(dir.resolve(producer.id() + ".ttl"), String.join(" .\n", triples) + " .\n");
-        Files.writeString(dir.resolve(producer.id() + ".trig"), graph + " {\n" + String.join(" .\n", triples) + " .\n}\n");
-        Files.writeString(dir.resolve(producer.id() + ".nq"),
-                String.join("\n", triples.stream().map(triple -> triple + " " + graph + " .").toList()) + "\n");
+        Files.writeString(dir.resolve(producer.id() + ".trig"),
+                trig(graph, triples) + (citations.isEmpty() ? "" : trig(provenance, citations)));
+        Files.writeString(dir.resolve(producer.id() + ".nq"), quads(graph, triples) + quads(provenance, citations));
         Files.writeString(dir.resolve("source-alignments.trig"), "# No reviewed alignments in this isolated fixture\n");
         Files.writeString(dir.resolve("validation-report.json"), "{\"conforms\":true,\"profile\":\"Synthetic consumer test only\"}");
         Map<String, String> artifacts = new LinkedHashMap<>();
@@ -115,8 +136,16 @@ class MultiProducerIntegrationTests {
         Files.writeString(manifest, JsonMapper.builder().build().writeValueAsString(Map.of(
                 "contract", CONTRACT, "namespace", producer.namespace(), "conforms", true,
                 "artifacts", artifacts, "concepts", 1, "version", version,
-                "counts", Map.of("asserted", triples.size(), "alignments", 0, "inferred", 0, "provenance", 0))));
+                "counts", Map.of("asserted", triples.size(), "alignments", 0, "inferred", 0, "provenance", citations.size()))));
         return new Fixture(dir, RdfReleaseVerifier.sha256(manifest));
+    }
+
+    private static String trig(String graph, List<String> triples) {
+        return graph + " {\n" + String.join(" .\n", triples) + " .\n}\n";
+    }
+
+    private static String quads(String graph, List<String> triples) {
+        return String.join("", triples.stream().map(triple -> triple + " " + graph + " .\n").toList());
     }
 
     private static String iri(String value) { return "<" + value + ">"; }

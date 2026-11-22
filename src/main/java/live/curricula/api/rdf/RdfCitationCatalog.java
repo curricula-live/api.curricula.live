@@ -16,11 +16,9 @@ import org.springframework.stereotype.Service;
 /** Bibliography and citation records from the active release's named provenance graph. */
 @Service
 public final class RdfCitationCatalog {
-    private static final String BASE = RdfReleaseStore.BASE;
     private static final String PREFIXES = """
             PREFIX dct: <http://purl.org/dc/terms/>
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            PREFIX prov: <http://www.w3.org/ns/prov#>
             """;
     private static final String GRAPH_PATTERN = """
             GRAPH <%sgraph/provenance> {
@@ -32,9 +30,16 @@ public final class RdfCitationCatalog {
             }
             """;
     private final RdfQueryStore store;
+    private final RdfOntologyRegistry registry;
 
     public RdfCitationCatalog(RdfQueryStore store) {
+        this(store, RdfOntologyRegistry.DEFAULT);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RdfCitationCatalog(RdfQueryStore store, RdfOntologyRegistry registry) {
         this.store = store;
+        this.registry = registry;
     }
 
     public record Page<T>(String version, String manifestSha256, int offset, Integer nextOffset, List<T> results) { }
@@ -45,17 +50,27 @@ public final class RdfCitationCatalog {
     public static final class PublicationChanged extends RuntimeException { }
 
     public Page<Source> sources(int offset, int limit, String pin) {
+        return sources("formal-sciences", offset, limit, pin);
+    }
+
+    public Page<Source> sources(String id, int offset, int limit, String pin) {
+        var producer = producer(id);
         var query = new ParameterizedSparqlString(PREFIXES + """
                 SELECT ?source (COUNT(DISTINCT ?assertion) AS ?count) WHERE {
                 %s
                 }
                 GROUP BY ?source ORDER BY STR(?source)
-                """.formatted(GRAPH_PATTERN.formatted(BASE, "")));
-        return page(offset, limit, pin, dataset -> rows(dataset, query, offset, limit,
+                """.formatted(GRAPH_PATTERN.formatted(producer.namespace(), "")));
+        return page(id, offset, limit, pin, dataset -> rows(dataset, query, offset, limit,
                 row -> new Source(row.getResource("source").getURI(), row.getLiteral("count").getLong())));
     }
 
     public Page<Citation> citations(String source, String conceptSlug, int offset, int limit, String pin) {
+        return citations("formal-sciences", source, conceptSlug, offset, limit, pin);
+    }
+
+    public Page<Citation> citations(String id, String source, String conceptSlug, int offset, int limit, String pin) {
+        var producer = producer(id);
         if (source != null) {
             RdfOntologyRegistry.requireAbsoluteIri(source);
             var uri = java.net.URI.create(source);
@@ -63,8 +78,7 @@ public final class RdfCitationCatalog {
                 throw new IllegalArgumentException("Source must be an HTTP(S) IRI");
             }
         }
-        var concept = RdfOntologyRegistry.FORMAL_SCIENCES;
-        String conceptIri = conceptSlug == null ? null : concept.conceptIri(conceptSlug);
+        String conceptIri = conceptSlug == null ? null : producer.conceptIri(conceptSlug);
         String filters = (source == null ? "" : "FILTER(?source = ?sourceFilter)\n")
                 + (conceptIri == null ? "" : "FILTER(?subject = ?conceptFilter || ?object = ?conceptFilter)\n");
         var query = new ParameterizedSparqlString(PREFIXES + """
@@ -72,27 +86,27 @@ public final class RdfCitationCatalog {
                 %s
                 }
                 ORDER BY STR(?assertion) STR(?source) STR(?subject) STR(?predicate) ?object
-                """.formatted(GRAPH_PATTERN.formatted(BASE, filters)));
+                """.formatted(GRAPH_PATTERN.formatted(producer.namespace(), filters)));
         if (source != null) query.setIri("sourceFilter", source);
         if (conceptIri != null) query.setIri("conceptFilter", conceptIri);
 
-        return page(offset, limit, pin, dataset -> {
-            if (conceptIri != null && RdfOntologyRegistry.DEFAULT.concept(dataset, conceptIri).isEmpty()) {
+        return page(id, offset, limit, pin, dataset -> {
+            if (conceptIri != null && registry.concept(dataset, conceptIri).isEmpty()) {
                 throw new NoSuchElementException();
             }
-            return rows(dataset, query, offset, limit, RdfCitationCatalog::citation);
+            return rows(dataset, query, offset, limit, row -> citation(row, producer.graphIri("provenance")));
         });
     }
 
-    private <T> Page<T> page(int offset, int limit, String pin, Function<Dataset, List<T>> query) {
+    private <T> Page<T> page(String id, int offset, int limit, String pin, Function<Dataset, List<T>> query) {
         if (offset < 0 || offset > 10000 || limit < 1 || limit > 100) {
             throw new IllegalArgumentException("Offset must be 0..10000 and limit 1..100");
         }
         if (pin != null && !RdfReleaseVerifier.validDigest(pin)) {
             throw new IllegalArgumentException("Publication pin must be a manifest SHA-256");
         }
-        return store.readFormal(dataset -> {
-            var publication = store.status();
+        return store.readProducer(id, dataset -> {
+            var publication = store.status(id);
             if (pin != null && !pin.equals(publication.manifestSha256())) throw new PublicationChanged();
             List<T> rows = query.apply(dataset);
             boolean more = rows.size() > limit;
@@ -115,7 +129,7 @@ public final class RdfCitationCatalog {
         return rows;
     }
 
-    private static Citation citation(QuerySolution row) {
+    private static Citation citation(QuerySolution row, String graph) {
         String subject = row.getResource("subject").getURI();
         RDFNode object = row.get("object");
         var term = object.isURIResource() ? new Term(object.asResource().getURI(), "iri", null, null)
@@ -123,7 +137,12 @@ public final class RdfCitationCatalog {
                 object.asLiteral().getLanguage());
         return new Citation(row.getResource("assertion").getURI(), subject, slug(subject),
                 row.getResource("predicate").getURI(), term, object.isURIResource() ? slug(term.value()) : null,
-                row.getResource("source").getURI(), BASE + "graph/provenance");
+                row.getResource("source").getURI(), graph);
+    }
+
+    private RdfOntologyRegistry.Producer producer(String id) {
+        return registry.producers().stream().filter(item -> item.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown ontology producer"));
     }
 
     private static String slug(String iri) {

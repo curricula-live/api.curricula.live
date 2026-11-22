@@ -57,6 +57,7 @@ paths:
     get:
       operationId: browseRdfCitationSources
       parameters:
+        - { name: producer, in: query, schema: { type: string, default: formal-sciences } }
         - $ref: '#/components/parameters/EvidenceOffset'
         - $ref: '#/components/parameters/EvidenceLimit'
         - $ref: '#/components/parameters/EvidencePublication'
@@ -69,6 +70,7 @@ paths:
     get:
       operationId: browseRdfCitationsBySource
       parameters:
+        - { name: producer, in: query, schema: { type: string, default: formal-sciences } }
         - { name: source, in: query, required: true, schema: { type: string, format: uri } }
         - $ref: '#/components/parameters/EvidenceOffset'
         - $ref: '#/components/parameters/EvidenceLimit'

@@ -41,6 +41,11 @@ public final class RdfPublicationFetcher {
 
     public Path fetch(URI immutableBaseUrl, String pinnedManifestSha256, Path destination)
             throws IOException, InterruptedException {
+        return fetch(RdfOntologyRegistry.FORMAL_SCIENCES, immutableBaseUrl, pinnedManifestSha256, destination);
+    }
+
+    public Path fetch(RdfOntologyRegistry.Producer producer, URI immutableBaseUrl, String pinnedManifestSha256,
+                      Path destination) throws IOException, InterruptedException {
         if (!"https".equalsIgnoreCase(immutableBaseUrl.getScheme()) || immutableBaseUrl.getHost() == null
                 || !immutableBaseUrl.getRawPath().endsWith("/") || immutableBaseUrl.getRawUserInfo() != null
                 || immutableBaseUrl.getRawQuery() != null || immutableBaseUrl.getRawFragment() != null) {
@@ -51,18 +56,18 @@ public final class RdfPublicationFetcher {
         }
         Path target = destination.toAbsolutePath().normalize();
         if (Files.exists(target)) {
-            RdfReleaseVerifier.verify(target, pinnedManifestSha256);
+            RdfReleaseVerifier.verify(target, pinnedManifestSha256, producer);
             return destination;
         }
         Files.createDirectories(target.getParent());
         Path staging = Files.createTempDirectory(target.getParent(), ".rdf-fetch-");
         try {
             download.get(immutableBaseUrl.resolve("manifest.json"), staging.resolve("manifest.json"));
-            RdfReleaseVerifier.verifyManifest(staging, pinnedManifestSha256);
-            for (String name : RdfReleaseVerifier.FILES) {
+            RdfReleaseVerifier.verifyManifest(staging, pinnedManifestSha256, producer);
+            for (String name : RdfReleaseVerifier.files(producer)) {
                 download.get(immutableBaseUrl.resolve(name), staging.resolve(name));
             }
-            RdfReleaseVerifier.verify(staging, pinnedManifestSha256);
+            RdfReleaseVerifier.verify(staging, pinnedManifestSha256, producer);
             Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE);
             return destination;
         } finally {
