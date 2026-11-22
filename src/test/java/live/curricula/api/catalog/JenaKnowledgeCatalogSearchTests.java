@@ -45,7 +45,7 @@ class JenaKnowledgeCatalogSearchTests {
                 dataset.end();
             }
             var store = mock(RdfReleaseStore.class);
-            when(store.read(any())).thenAnswer(invocation -> {
+            when(store.readFormal(any())).thenAnswer(invocation -> {
                 Function<Dataset, ?> search = invocation.getArgument(0);
                 dataset.begin(ReadWrite.READ);
                 try {

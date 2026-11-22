@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import live.curricula.api.catalog.CatalogUnavailableException;
 import org.apache.jena.query.Dataset;
 import org.apache.jena.query.DatasetFactory;
@@ -33,7 +34,7 @@ import org.apache.jena.vocabulary.RDF;
 import org.apache.jena.vocabulary.SKOS;
 
 /** Persistent, exclusively owned TDB2 store with immutable releases and a single activation record. */
-public final class RdfReleaseStore implements AutoCloseable {
+public final class RdfReleaseStore implements RdfQueryStore, AutoCloseable {
     public static final String BASE = RdfReleaseVerifier.NAMESPACE;
     private static final String STATE_FILE = "release-state";
     private static final String STAGING = ".staging-";
@@ -43,6 +44,7 @@ public final class RdfReleaseStore implements AutoCloseable {
     private static final Set<Path> OWNED_ROOTS = ConcurrentHashMap.newKeySet();
     private static final System.Logger LOG = System.getLogger(RdfReleaseStore.class.getName());
 
+    private final RdfOntologyRegistry.Producer producer;
     private final Path root;
     private final Path releases;
     private final FileChannel ownership;
@@ -66,10 +68,20 @@ public final class RdfReleaseStore implements AutoCloseable {
     }
 
     public RdfReleaseStore(Path storage) throws IOException {
-        this(storage, transition -> { });
+        this(storage, RdfOntologyRegistry.FORMAL_SCIENCES);
+    }
+
+    RdfReleaseStore(Path storage, RdfOntologyRegistry.Producer producer) throws IOException {
+        this(storage, producer, transition -> { });
     }
 
     RdfReleaseStore(Path storage, TransitionObserver transitions) throws IOException {
+        this(storage, RdfOntologyRegistry.FORMAL_SCIENCES, transitions);
+    }
+
+    private RdfReleaseStore(Path storage, RdfOntologyRegistry.Producer producer,
+                            TransitionObserver transitions) throws IOException {
+        this.producer = producer;
         root = Files.createDirectories(storage).toRealPath();
         releases = root.resolve("releases");
         this.transitions = transitions;
@@ -140,9 +152,13 @@ public final class RdfReleaseStore implements AutoCloseable {
 
     /** Runs a read transaction while preventing activation from closing its dataset. */
     public <T> T read(Function<Dataset, T> query) {
+        return readIfActive(query, () -> { throw new CatalogUnavailableException(); });
+    }
+
+    <T> T readIfActive(Function<Dataset, T> query, Supplier<T> whenEmpty) {
         mutex.readLock().lock();
         try {
-            if (current == null) throw new CatalogUnavailableException();
+            if (current == null) return whenEmpty.get();
             Dataset dataset = current.dataset();
             dataset.begin(ReadWrite.READ);
             try {
@@ -165,15 +181,15 @@ public final class RdfReleaseStore implements AutoCloseable {
         if (!RdfReleaseVerifier.validCommit(sourceCommit)) {
             throw new IllegalArgumentException("A full immutable source commit SHA is required");
         }
-        RdfReleaseVerifier.verifyManifest(packageDir, pinnedManifestSha256);
+        RdfReleaseVerifier.verifyManifest(packageDir, pinnedManifestSha256, producer);
         Path staged = Files.createTempDirectory(releases, STAGING);
         try {
             Path snapshot = Files.createDirectory(staged.resolve("package"));
             Files.copy(RdfReleaseVerifier.regularFile(packageDir, "manifest.json"), snapshot.resolve("manifest.json"));
-            for (String name : RdfReleaseVerifier.FILES) {
+            for (String name : RdfReleaseVerifier.files(producer)) {
                 Files.copy(RdfReleaseVerifier.regularFile(packageDir, name), snapshot.resolve(name));
             }
-            VerifiedRelease publication = RdfReleaseVerifier.verify(snapshot, pinnedManifestSha256);
+            VerifiedRelease publication = RdfReleaseVerifier.verify(snapshot, pinnedManifestSha256, producer);
             Path releaseDir = releases.resolve(publication.manifestSha256());
             if (!Files.exists(releaseDir)) {
                 prepareRelease(staged, publication, sourceCommit.toLowerCase(Locale.ROOT), releaseDir);
@@ -201,7 +217,7 @@ public final class RdfReleaseStore implements AutoCloseable {
         try {
             dataset.begin(ReadWrite.WRITE);
             try {
-                parse(publication.packageDir().resolve("formal-sciences.nq"), Lang.NQUADS).parse(dataset);
+                parse(publication.packageDir().resolve(producer.id() + ".nq"), Lang.NQUADS).parse(dataset);
                 dataset.commit();
             } finally {
                 dataset.end();
@@ -257,7 +273,7 @@ public final class RdfReleaseStore implements AutoCloseable {
 
     private Active openVerified(String digest) throws IOException {
         Path release = releases.resolve(checkDigest(digest));
-        VerifiedRelease verified = RdfReleaseVerifier.verifyManifest(release, digest);
+        VerifiedRelease verified = RdfReleaseVerifier.verifyManifest(release, digest, producer);
         String commit = Files.readString(RdfReleaseVerifier.regularFile(release, "source-commit.txt")).trim();
         if (!RdfReleaseVerifier.validCommit(commit) || !Files.isDirectory(release.resolve("tdb2"))) {
             throw new IOException("Invalid stored RDF release metadata");
@@ -280,14 +296,16 @@ public final class RdfReleaseStore implements AutoCloseable {
 
     private static void verifyStoredDataset(Dataset dataset, VerifiedRelease release) throws IOException {
         Set<String> expected = new HashSet<>();
+        Set<String> nonempty = new HashSet<>();
         for (String name : RdfReleaseVerifier.GRAPHS) {
             String iri = release.namespace() + "graph/" + name;
             expected.add(iri);
+            if (release.graphCounts().get(name) > 0) nonempty.add(iri);
             if (dataset.getNamedModel(iri).size() != release.graphCounts().get(name)) {
                 throw new IOException("Graph count mismatch: " + name);
             }
         }
-        verifyGraphNames(dataset, expected);
+        verifyGraphNames(dataset, expected, nonempty);
         var asserted = dataset.getNamedModel(release.namespace() + "graph/asserted");
         var concepts = asserted.listResourcesWithProperty(RDF.type, SKOS.Concept);
         long count = 0;
@@ -305,32 +323,33 @@ public final class RdfReleaseStore implements AutoCloseable {
         if (count != release.concepts()) throw new IOException("Canonical concept count mismatch");
     }
 
-    private static void verifyGraphNames(Dataset dataset, Set<String> expected) throws IOException {
+    private static void verifyGraphNames(Dataset dataset, Set<String> expected, Set<String> required) throws IOException {
         Set<String> actual = new HashSet<>();
         dataset.listNames().forEachRemaining(actual::add);
-        if (!dataset.getDefaultModel().isEmpty() || !actual.equals(expected)) {
+        if (!dataset.getDefaultModel().isEmpty() || (!expected.containsAll(actual) || !actual.containsAll(required))) {
             throw new IOException("Unexpected named or default RDF graph: " + actual);
         }
     }
 
-    private static void verifyEquivalentDistributions(Dataset dataset, VerifiedRelease release) throws IOException {
+    private void verifyEquivalentDistributions(Dataset dataset, VerifiedRelease release) throws IOException {
         Path dir = release.packageDir();
         Dataset trig = DatasetFactory.createTxnMem();
         Dataset alignments = DatasetFactory.createTxnMem();
         var turtle = ModelFactory.createDefaultModel();
         try {
-            parse(dir.resolve("formal-sciences.trig"), Lang.TRIG).parse(trig);
+            parse(dir.resolve(producer.id() + ".trig"), Lang.TRIG).parse(trig);
             if (!IsoMatcher.isomorphic(dataset.asDatasetGraph(), trig.asDatasetGraph())) {
                 throw new IOException("TriG/N-Quads semantic mismatch");
             }
 
             String alignment = release.namespace() + "graph/alignments";
             parse(dir.resolve("source-alignments.trig"), Lang.TRIG).parse(alignments);
-            verifyGraphNames(alignments, Set.of(alignment));
+            verifyGraphNames(alignments, Set.of(alignment),
+                    release.graphCounts().get("alignments") > 0 ? Set.of(alignment) : Set.of());
             if (!dataset.getNamedModel(alignment).isIsomorphicWith(alignments.getNamedModel(alignment))) {
                 throw new IOException("Alignment distribution mismatch");
             }
-            parse(dir.resolve("formal-sciences.ttl"), Lang.TURTLE).parse(turtle);
+            parse(dir.resolve(producer.id() + ".ttl"), Lang.TURTLE).parse(turtle);
             if (!turtle.isIsomorphicWith(dataset.getNamedModel(release.namespace() + "graph/asserted"))) {
                 throw new IOException("Turtle asserted graph mismatch");
             }

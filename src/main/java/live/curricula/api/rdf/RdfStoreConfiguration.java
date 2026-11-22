@@ -9,14 +9,19 @@ import org.springframework.core.env.Environment;
 
 @Configuration
 public class RdfStoreConfiguration {
+    @Bean
+    RdfOntologyRegistry ontologyRegistry(Environment environment) {
+        return RdfPublications.registry(environment.getProperty("CURRICULA_RDF_PRODUCERS"));
+    }
+
     @Bean(destroyMethod = "close")
-    RdfReleaseStore releaseStore(Environment environment) throws IOException {
+    RdfPublications releaseStore(Environment environment, RdfOntologyRegistry registry) throws IOException {
         String storage = environment.getProperty("CURRICULA_RDF_STORE", "./var/rdf");
-        RdfReleaseStore store = new RdfReleaseStore(Path.of(storage));
+        RdfPublications store = new RdfPublications(Path.of(storage), registry);
         String packageDirectory = environment.getProperty("CURRICULA_RDF_PACKAGE_DIR");
         if (packageDirectory != null && !packageDirectory.isBlank()) {
             try {
-                store.ingest(Path.of(packageDirectory),
+                store.ingest("formal-sciences", Path.of(packageDirectory),
                         environment.getProperty("CURRICULA_RDF_MANIFEST_SHA256"),
                         environment.getProperty("CURRICULA_RDF_COMMIT"));
             } catch (IOException | RuntimeException exception) {
@@ -28,12 +33,12 @@ public class RdfStoreConfiguration {
     }
 
     @Bean
-    RdfKnowledgeExplorer explorer(RdfReleaseStore store) {
-        return new RdfKnowledgeExplorer(store);
+    RdfKnowledgeExplorer explorer(RdfQueryStore store, RdfOntologyRegistry registry) {
+        return new RdfKnowledgeExplorer(store, registry);
     }
 
     @Bean
-    JenaKnowledgeCatalog knowledgeCatalog(RdfReleaseStore store) {
-        return new JenaKnowledgeCatalog(store);
+    JenaKnowledgeCatalog knowledgeCatalog(RdfQueryStore store, RdfOntologyRegistry registry) {
+        return new JenaKnowledgeCatalog(store, registry);
     }
 }

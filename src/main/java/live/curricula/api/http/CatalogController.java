@@ -41,12 +41,13 @@ public class CatalogController {
 
     @GetMapping("/search")
     public SearchResults search(@RequestParam(required = false) String q,
-                                @RequestParam(defaultValue = "25") int limit) {
+                                @RequestParam(defaultValue = "25") int limit,
+                                @RequestParam(required = false) String producer) {
         if (q == null || q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Query must not be blank");
         }
         checkLimit(limit);
-        return new SearchResults(q.trim(), catalog.search(q.trim(), limit));
+        return new SearchResults(q.trim(), ((JenaKnowledgeCatalog) catalog).search(q.trim(), limit, producer));
     }
 
     private static void checkLimit(int limit) {

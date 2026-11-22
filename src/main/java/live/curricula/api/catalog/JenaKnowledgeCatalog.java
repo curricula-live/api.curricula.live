@@ -13,6 +13,7 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 import live.curricula.api.rdf.RdfOntologyRegistry;
 import live.curricula.api.rdf.RdfReleaseStore;
+import live.curricula.api.rdf.RdfQueryStore;
 import org.apache.jena.query.QueryExecutionFactory;
 import org.apache.jena.query.QuerySolution;
 import org.apache.jena.rdf.model.Literal;
@@ -38,14 +39,14 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
     private static final Pattern SEPARATORS = Pattern.compile("[-_\\s]+");
     private static final Comparator<Ranked> RANK_ORDER = Comparator.comparingInt(Ranked::rank).reversed()
             .thenComparing(Ranked::concept, SEARCH_ORDER);
-    private final RdfReleaseStore store;
+    private final RdfQueryStore store;
     private final RdfOntologyRegistry ontologies;
 
-    public JenaKnowledgeCatalog(RdfReleaseStore store) {
+    public JenaKnowledgeCatalog(RdfQueryStore store) {
         this(store, RdfOntologyRegistry.DEFAULT);
     }
 
-    public JenaKnowledgeCatalog(RdfReleaseStore store, RdfOntologyRegistry ontologies) {
+    public JenaKnowledgeCatalog(RdfQueryStore store, RdfOntologyRegistry ontologies) {
         this.store = store;
         this.ontologies = ontologies;
     }
@@ -87,7 +88,7 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
         if (domain != null && !domain.isBlank() && !domain.matches("[a-z][-a-z0-9]*")) {
             throw new IllegalArgumentException("Invalid domain");
         }
-        return store.read(dataset -> {
+        return store.readFormal(dataset -> {
             List<ConceptSummary> list = new ArrayList<>();
             try (var query = QueryExecutionFactory.create(sparql, dataset)) {
                 var rs = query.execSelect();
@@ -103,40 +104,53 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
     private record Ranked(ConceptSummary concept, int rank) { }
 
     @Override public List<ConceptSummary> search(String text, int limit) {
+        return search(text, limit, null);
+    }
+
+    public List<ConceptSummary> search(String text, int limit, String producerId) {
+        var selectedProducers = producerId == null ? List.of(RdfOntologyRegistry.FORMAL_SCIENCES)
+                : ontologies.producers().stream().filter(p -> "all".equals(producerId) || p.id().equals(producerId)).toList();
+        if (selectedProducers.isEmpty()) throw new IllegalArgumentException("Unknown ontology producer");
         if (text == null || text.isBlank() || text.codePointCount(0, text.length()) > 160
                 || limit < 1 || limit > 100) {
             throw new IllegalArgumentException("Provide searchable text of at most 160 characters and a limit of 1..100");
         }
         String needle = normalize(text);
         if (needle.isBlank()) return List.of();
-        return store.read(dataset -> {
-            Model asserted = dataset.getNamedModel(ASSERTED);
+        java.util.function.Function<org.apache.jena.query.Dataset, List<ConceptSummary>> query = dataset -> {
             var best = new PriorityQueue<>(limit, RANK_ORDER.reversed());
-            for (var match : matchingSubjects(asserted, needle).entrySet()) {
-                Resource subject = match.getKey();
-                if (!asserted.contains(subject, RDF.type, SKOS.Concept)) continue;
-                var labels = subject.listProperties(SKOS.prefLabel);
-                ConceptSummary selected = null;
-                try {
-                    while (labels.hasNext()) {
-                        if (!(labels.nextStatement().getObject() instanceof Literal label)
-                                || !displayLanguage(label)) continue;
-                        var candidate = summary(subject, label);
-                        if (selected == null || SEARCH_ORDER.compare(candidate, selected) < 0) selected = candidate;
-                    }
-                } finally {
-                    labels.close();
-                }
-                if (selected == null) continue;
-                var candidate = new Ranked(selected, match.getValue());
-                if (best.size() < limit) best.add(candidate);
-                else if (RANK_ORDER.compare(candidate, best.element()) < 0) {
-                    best.remove();
-                    best.add(candidate);
-                }
+            for (var producer : selectedProducers) {
+                addMatches(dataset.getNamedModel(producer.graphIri("asserted")), needle, limit, best);
             }
             return best.stream().sorted(RANK_ORDER).map(Ranked::concept).toList();
-        });
+        };
+        return producerId == null ? store.readFormal(query) : store.read(query);
+    }
+
+    private static void addMatches(Model asserted, String needle, int limit, PriorityQueue<Ranked> best) {
+        for (var match : matchingSubjects(asserted, needle).entrySet()) {
+            Resource subject = match.getKey();
+            if (!asserted.contains(subject, RDF.type, SKOS.Concept)) continue;
+            var labels = subject.listProperties(SKOS.prefLabel);
+            ConceptSummary selected = null;
+            try {
+                while (labels.hasNext()) {
+                    if (!(labels.nextStatement().getObject() instanceof Literal label)
+                            || !displayLanguage(label)) continue;
+                    var candidate = summary(subject, label);
+                    if (selected == null || SEARCH_ORDER.compare(candidate, selected) < 0) selected = candidate;
+                }
+            } finally {
+                labels.close();
+            }
+            if (selected == null) continue;
+            var candidate = new Ranked(selected, match.getValue());
+            if (best.size() < limit) best.add(candidate);
+            else if (RANK_ORDER.compare(candidate, best.element()) < 0) {
+                best.remove();
+                best.add(candidate);
+            }
+        }
     }
 
     /** Use each searchable predicate's TDB2 index and keep one relevance score per matching concept. */
@@ -194,7 +208,7 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
 
     /** The v1 wire format lists canonical formal-sciences slugs without projecting RDF terms. */
     public List<String> canonicalSlugs() {
-        return store.read(dataset -> {
+        return store.readFormal(dataset -> {
             var slugs = new TreeSet<String>();
             var concepts = dataset.getNamedModel(ASSERTED).listResourcesWithProperty(RDF.type, SKOS.Concept);
             try {
@@ -240,7 +254,10 @@ public final class JenaKnowledgeCatalog implements KnowledgeCatalog {
 
     @Override public Optional<ConceptSummary> findBySlug(String slug) {
         if (slug == null || !slug.matches("[a-z0-9][-a-z0-9]*")) return Optional.empty();
-        return findByIri(NS + "concept/" + slug);
+        String iri = NS + "concept/" + slug;
+        return store.readFormal(dataset -> ontologies.concept(dataset, iri)
+                .flatMap(concept -> RdfOntologyRegistry.preferredLabel(concept)
+                        .map(label -> new ConceptSummary(iri, slug, label))));
     }
 
     public Optional<ConceptSummary> findByIri(String iri) {

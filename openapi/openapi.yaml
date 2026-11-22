@@ -131,9 +131,27 @@ paths:
       parameters:
         - { name: q, in: query, required: true, schema: { type: string, minLength: 1 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - name: producer
+          in: query
+          description: Registered producer ID, or all for a ranked search across active producers. Omission uses formal sciences.
+          schema: { type: string }
       responses:
         '200': { description: Search results from the validated RDF store }
         '400': { description: Invalid search query }
+        '503': { description: RDF dataset unavailable }
+  /api/v1/knowledge/publications:
+    get:
+      operationId: listActiveProducerPublications
+      responses:
+        '200': { description: Publication status keyed by registered producer }
+  /api/v1/education:
+    get:
+      operationId: getPublishedEducationContext
+      parameters:
+        - { name: iri, in: query, required: true, schema: { type: string, format: uri } }
+      responses:
+        '200': { description: Explicit educational statements and whether an education source is active }
+        '404': { description: Unknown canonical concept }
         '503': { description: RDF dataset unavailable }
   /api/v1/knowledge/publication:
     get:

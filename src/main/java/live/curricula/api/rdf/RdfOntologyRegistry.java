@@ -21,7 +21,7 @@ public final class RdfOntologyRegistry {
 
     public record Producer(String id, String namespace) {
         public Producer {
-            if (id == null || !id.matches("[a-z][-a-z0-9]*")) {
+            if (id == null || "all".equals(id) || !id.matches("[a-z][-a-z0-9]{0,63}")) {
                 throw new IllegalArgumentException("Invalid ontology producer ID");
             }
             requireAbsoluteIri(namespace);
@@ -43,6 +43,7 @@ public final class RdfOntologyRegistry {
     private final List<Producer> producers;
 
     public RdfOntologyRegistry(List<Producer> producers) {
+        if (producers.size() > 32) throw new IllegalArgumentException("At most 32 ontology producers are supported");
         this.producers = List.copyOf(producers);
         for (int index = 0; index < this.producers.size(); index++) {
             Producer producer = this.producers.get(index);

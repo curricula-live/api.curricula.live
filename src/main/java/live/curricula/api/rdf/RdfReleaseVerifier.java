@@ -28,10 +28,20 @@ public final class RdfReleaseVerifier {
     private RdfReleaseVerifier() { }
 
     public static VerifiedRelease verify(Path root, String pinnedManifestSha256) throws IOException {
+        return verify(root, pinnedManifestSha256, RdfOntologyRegistry.FORMAL_SCIENCES);
+    }
+
+    static List<String> files(RdfOntologyRegistry.Producer producer) {
+        return List.of(producer.id() + ".ttl", producer.id() + ".trig", producer.id() + ".nq",
+                "source-alignments.trig", "validation-report.json");
+    }
+
+    static VerifiedRelease verify(Path root, String pinnedManifestSha256, RdfOntologyRegistry.Producer producer)
+            throws IOException {
         JsonNode manifest = pinnedManifest(root, pinnedManifestSha256);
-        VerifiedRelease release = parseManifest(root, pinnedManifestSha256, manifest);
+        VerifiedRelease release = parseManifest(root, pinnedManifestSha256, manifest, producer);
         JsonNode artifacts = manifest.path("artifacts");
-        for (String name : FILES) {
+        for (String name : files(producer)) {
             if (!artifacts.path(name).asText().equals(sha256(regularFile(root, name)))) {
                 throw new IOException("Modified artifact: " + name);
             }
@@ -44,7 +54,12 @@ public final class RdfReleaseVerifier {
     }
 
     static VerifiedRelease verifyManifest(Path root, String pinnedManifestSha256) throws IOException {
-        return parseManifest(root, pinnedManifestSha256, pinnedManifest(root, pinnedManifestSha256));
+        return verifyManifest(root, pinnedManifestSha256, RdfOntologyRegistry.FORMAL_SCIENCES);
+    }
+
+    static VerifiedRelease verifyManifest(Path root, String pinnedManifestSha256, RdfOntologyRegistry.Producer producer)
+            throws IOException {
+        return parseManifest(root, pinnedManifestSha256, pinnedManifest(root, pinnedManifestSha256), producer);
     }
 
     private static JsonNode pinnedManifest(Path root, String pinnedManifestSha256) throws IOException {
@@ -58,11 +73,11 @@ public final class RdfReleaseVerifier {
         return parseJson(bytes);
     }
 
-    private static VerifiedRelease parseManifest(Path root, String digest, JsonNode manifest) throws IOException {
+    private static VerifiedRelease parseManifest(Path root, String digest, JsonNode manifest, RdfOntologyRegistry.Producer producer) throws IOException {
         if (!CONTRACT.equals(manifest.path("contract").asText())) {
             throw new IOException("Incompatible RDF release contract");
         }
-        if (!NAMESPACE.equals(manifest.path("namespace").asText())) {
+        if (!producer.namespace().equals(manifest.path("namespace").asText())) {
             throw new IOException("Unexpected canonical RDF namespace");
         }
         if (!conforms(manifest)) {
@@ -70,10 +85,10 @@ public final class RdfReleaseVerifier {
         }
 
         JsonNode artifacts = manifest.path("artifacts");
-        if (!artifacts.isObject() || artifacts.size() != FILES.size()) {
+        if (!artifacts.isObject() || artifacts.size() != files(producer).size()) {
             throw new IOException("Unexpected artifact roster");
         }
-        for (String name : FILES) {
+        for (String name : files(producer)) {
             if (!artifacts.path(name).isString() || !validDigest(artifacts.path(name).asText())) {
                 throw new IOException("Invalid artifact digest: " + name);
             }
@@ -97,7 +112,7 @@ public final class RdfReleaseVerifier {
         }
         JsonNode version = manifest.path("version");
         if (!version.isString() || version.asText().isBlank()) throw new IOException("Missing ontology version");
-        return new VerifiedRelease(root, version.asText(), NAMESPACE,
+        return new VerifiedRelease(root, version.asText(), producer.namespace(),
                 digest, Map.copyOf(counts), concepts.asInt());
     }
 

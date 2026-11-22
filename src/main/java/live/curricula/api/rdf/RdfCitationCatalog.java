@@ -31,9 +31,9 @@ public final class RdfCitationCatalog {
               %s
             }
             """;
-    private final RdfReleaseStore store;
+    private final RdfQueryStore store;
 
-    public RdfCitationCatalog(RdfReleaseStore store) {
+    public RdfCitationCatalog(RdfQueryStore store) {
         this.store = store;
     }
 
@@ -91,7 +91,7 @@ public final class RdfCitationCatalog {
         if (pin != null && !RdfReleaseVerifier.validDigest(pin)) {
             throw new IllegalArgumentException("Publication pin must be a manifest SHA-256");
         }
-        return store.read(dataset -> {
+        return store.readFormal(dataset -> {
             var publication = store.status();
             if (pin != null && !pin.equals(publication.manifestSha256())) throw new PublicationChanged();
             List<T> rows = query.apply(dataset);

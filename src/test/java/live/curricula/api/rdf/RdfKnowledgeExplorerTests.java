@@ -49,6 +49,7 @@ class RdfKnowledgeExplorerTests {
                 dataset.end();
             }
         });
+        when(store.readFormal(any())).thenAnswer(invocation -> store.read(invocation.getArgument(0)));
         explorer = new RdfKnowledgeExplorer(store);
         populate(() -> concept(dataset.getNamedModel(FORMAL_SCIENCES.graphIri("asserted")), ROOT, "Root"));
     }

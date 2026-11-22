@@ -39,14 +39,14 @@ public final class RdfKnowledgeExplorer {
     private static final Comparator<Evidence> EVIDENCE_ORDER = Comparator.comparing(Evidence::assertionIri)
             .thenComparing(Evidence::graphIri);
 
-    private final RdfReleaseStore store;
+    private final RdfQueryStore store;
     private final RdfOntologyRegistry ontologies;
 
-    public RdfKnowledgeExplorer(RdfReleaseStore store) {
+    public RdfKnowledgeExplorer(RdfQueryStore store) {
         this(store, RdfOntologyRegistry.DEFAULT);
     }
 
-    public RdfKnowledgeExplorer(RdfReleaseStore store, RdfOntologyRegistry ontologies) {
+    public RdfKnowledgeExplorer(RdfQueryStore store, RdfOntologyRegistry ontologies) {
         this.store = store;
         this.ontologies = ontologies;
     }

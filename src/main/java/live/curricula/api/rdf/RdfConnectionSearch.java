@@ -42,9 +42,9 @@ public final class RdfConnectionSearch {
             .thenComparing(Candidate::object)
             .thenComparing(Candidate::layer);
 
-    private final RdfReleaseStore store;
+    private final RdfQueryStore store;
 
-    public RdfConnectionSearch(RdfReleaseStore store) {
+    public RdfConnectionSearch(RdfQueryStore store) {
         this.store = store;
     }
 
@@ -59,7 +59,7 @@ public final class RdfConnectionSearch {
 
     public List<Connection> search(String text, int limit) {
         var term = prepare(text, limit);
-        return store.read(dataset -> execute(dataset, term));
+        return store.readFormal(dataset -> execute(dataset, term));
     }
 
     static SearchTerm prepare(String text, int limit) {

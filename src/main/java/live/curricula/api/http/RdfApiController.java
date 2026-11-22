@@ -11,6 +11,7 @@ import live.curricula.api.rdf.RdfKnowledgeExplorer.Relationship;
 import live.curricula.api.rdf.RdfKnowledgeExplorer.RelationshipFilter;
 import live.curricula.api.rdf.RdfOntologyRegistry;
 import live.curricula.api.rdf.RdfReleaseStore;
+import live.curricula.api.rdf.RdfQueryStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +23,9 @@ import org.springframework.web.server.ResponseStatusException;
 public final class RdfApiController {
     private final JenaKnowledgeCatalog catalog;
     private final RdfKnowledgeExplorer explorer;
-    private final RdfReleaseStore releases;
+    private final RdfQueryStore releases;
 
-    public RdfApiController(JenaKnowledgeCatalog catalog, RdfKnowledgeExplorer explorer, RdfReleaseStore releases) {
+    public RdfApiController(JenaKnowledgeCatalog catalog, RdfKnowledgeExplorer explorer, RdfQueryStore releases) {
         this.catalog = catalog;
         this.explorer = explorer;
         this.releases = releases;
