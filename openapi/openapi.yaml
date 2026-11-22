@@ -92,6 +92,56 @@ paths:
         '404': { description: Unknown canonical concept }
         '409': { description: Publication changed since the requested page }
         '503': { description: Evidence unavailable }
+  /api/v1/planning/plans:
+    get:
+      operationId: listTeacherPlans
+      security: [{planningAccessToken: []}]
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+      responses:
+        '200': { description: Up to 100 plans for the verified owner }
+        '401': { description: Invalid or missing API access token }
+        '403': { description: Planning disabled or scope missing }
+    post:
+      operationId: createTeacherPlan
+      security: [{planningAccessToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanChange' }
+      responses:
+        '201': { description: Created owner-scoped plan }
+        '400': { description: Invalid title or unknown canonical concept }
+        '401': { description: Invalid or missing API access token }
+        '403': { description: Planning disabled or scope missing }
+  /api/v1/planning/plans/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: readTeacherPlan
+      security: [{planningAccessToken: []}]
+      responses:
+        '200': { description: Owner-scoped plan }
+        '401': { description: Invalid or missing API access token }
+        '403': { description: Planning disabled or scope missing }
+        '404': { description: Plan unavailable to the caller }
+    put:
+      operationId: updateTeacherPlan
+      security: [{planningAccessToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/PlanChange'
+                - required: [revision]
+      responses:
+        '200': { description: Updated owner-scoped plan with incremented revision }
+        '401': { description: Invalid or missing API access token }
+        '403': { description: Planning disabled or scope missing }
+        '404': { description: Missing, inaccessible or stale plan }
   /api/v1/status:
     get:
       operationId: getStatus
@@ -334,6 +384,12 @@ paths:
         '400': { description: Invalid text or limit }
         '503': { description: RDF dataset unavailable or search exceeded its query timeout }
 components:
+  securitySchemes:
+    planningAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 access token from the approved issuer and API audience with curricula.planning scope.
   parameters:
     EvidenceOffset: { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
     EvidenceLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
@@ -402,6 +458,13 @@ components:
       description: IRI of the opposite endpoint of the reified RDF statement.
       schema: { type: string, format: iri, maxLength: 2048 }
   schemas:
+    PlanChange:
+      type: object
+      required: [title, conceptIri]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        conceptIri: {type: string, format: uri, maxLength: 2048}
+        revision: {type: integer, minimum: 1}
     Relationship:
       type: object
       required: [subject, predicate, object, graph, direction, kind, objectLabel, graphIri]

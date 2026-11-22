@@ -52,6 +52,9 @@ class HttpContractTests {
         assertEquals(400, get("/api/v1/relationships/search?q=uses&limit=101").statusCode());
         assertEquals(503, get("/api/v1/relationships/search?q=uses").statusCode());
     }
+    @Test void planningIsDisabledByDefault() throws Exception {
+        assertEquals(403, get("/api/v1/planning/plans").statusCode());
+    }
     @Test void actuatorHealth() throws Exception {
         assertEquals(200, get("/actuator/health").statusCode());
     }

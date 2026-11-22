@@ -37,6 +37,8 @@ class PlanningStoreTests {
         var plan = store.create(owner, new Draft(" Logic lesson ", CONCEPT));
         assertEquals("Logic lesson", plan.title());
         assertEquals(CONCEPT, store.find(owner, plan.id()).orElseThrow().conceptIri());
+        assertEquals(java.util.List.of(plan), store.list(owner, 0));
+        assertTrue(store.list(outsider, 0).isEmpty());
         assertTrue(store.find(outsider, plan.id()).isEmpty());
         assertTrue(store.update(outsider, plan.id(), 1, new Draft("Replace", CONCEPT)).isEmpty());
 
@@ -46,8 +48,8 @@ class PlanningStoreTests {
             assertNotEquals(a.get(10, TimeUnit.SECONDS).isPresent(), b.get(10, TimeUnit.SECONDS).isPresent());
         }
         assertEquals(2L, store.find(owner, plan.id()).orElseThrow().revision());
-        assertThrows(IllegalArgumentException.class, () -> new Draft("Fake", CONCEPT + "/../../elsewhere"));
+        assertThrows(IllegalArgumentException.class, () -> store.create(owner, new Draft("Fake", CONCEPT + "/../../elsewhere")));
         assertThrows(IllegalArgumentException.class,
-                () -> new Draft("Fake", "https://curricula.live/knowledge/computing/concept/" + UUID.randomUUID()));
+                () -> store.create(owner, new Draft("Fake", "https://curricula.live/knowledge/computing/concept/" + UUID.randomUUID())));
     }
 }

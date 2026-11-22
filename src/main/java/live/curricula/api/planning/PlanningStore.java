@@ -4,6 +4,8 @@ import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -14,13 +16,20 @@ public final class PlanningStore {
     private static final String OWNER_PREDICATE = " WHERE id = ? AND owner_issuer = ? AND owner_subject = ?";
     private static final String PLAN_FIELDS = "id, title, concept_iri, revision";
     private final DataSource source;
+    private final RdfOntologyRegistry registry;
 
     public PlanningStore(DataSource source) {
+        this(source, RdfOntologyRegistry.DEFAULT);
+    }
+
+    public PlanningStore(DataSource source, RdfOntologyRegistry registry) {
         this.source = source;
+        this.registry = registry;
     }
 
     public record Account(String issuer, String subject) {
         public Account {
+            if (issuer == null || subject == null) throw new IllegalArgumentException("Missing identity claims");
             URI parsed = URI.create(issuer);
             if (issuer.length() > 2048 || !"https".equalsIgnoreCase(parsed.getScheme()) || parsed.getHost() == null
                     || parsed.getUserInfo() != null || parsed.getQuery() != null || parsed.getFragment() != null
@@ -33,16 +42,13 @@ public final class PlanningStore {
 
     public record Draft(String title, String conceptIri) {
         public Draft {
+            if (title == null) throw new IllegalArgumentException("Title is required");
             title = title.strip();
             if (title.isEmpty() || title.codePointCount(0, title.length()) > 200
                     || title.chars().anyMatch(Character::isISOControl)) {
                 throw new IllegalArgumentException("Title must be 1..200 printable characters");
             }
             RdfOntologyRegistry.requireAbsoluteIri(conceptIri);
-            var producer = RdfOntologyRegistry.DEFAULT.ownerOf(conceptIri);
-            if (producer.isEmpty() || !producer.get().localName(conceptIri).matches("[a-z0-9][-a-z0-9]*")) {
-                throw new IllegalArgumentException("Expected a canonical concept IRI");
-            }
         }
     }
 
@@ -60,6 +66,7 @@ public final class PlanningStore {
     }
 
     public Plan create(Account owner, Draft draft) throws SQLException {
+        requireOwnedNamespace(draft);
         try (var connection = source.getConnection();
              var statement = connection.prepareStatement("""
                      INSERT INTO curricula_planning.lesson_plan
@@ -90,6 +97,7 @@ public final class PlanningStore {
      * and inaccessible plans without disclosing which condition held.
      */
     public Optional<Plan> update(Account owner, UUID id, long expectedRevision, Draft draft) throws SQLException {
+        requireOwnedNamespace(draft);
         if (expectedRevision < 1) throw new IllegalArgumentException("Invalid plan revision");
         try (var connection = source.getConnection();
              var statement = connection.prepareStatement("""
@@ -105,6 +113,31 @@ public final class PlanningStore {
         }
     }
 
+    public List<Plan> list(Account owner, int offset) throws SQLException {
+        if (offset < 0 || offset > 10000) throw new IllegalArgumentException("Offset must be 0..10000");
+        try (var connection = source.getConnection();
+             var statement = connection.prepareStatement("SELECT " + PLAN_FIELDS + " " + """
+                     FROM curricula_planning.lesson_plan
+                     WHERE owner_issuer = ? AND owner_subject = ?
+                     ORDER BY id LIMIT 100 OFFSET ?
+                     """)) {
+            owner(statement, 1, owner);
+            statement.setInt(3, offset);
+            try (var rows = statement.executeQuery()) {
+                var result = new ArrayList<Plan>();
+                while (rows.next()) result.add(plan(rows));
+                return List.copyOf(result);
+            }
+        }
+    }
+
+    private void requireOwnedNamespace(Draft draft) {
+        var producer = registry.ownerOf(draft.conceptIri());
+        if (producer.isEmpty() || !producer.get().localName(draft.conceptIri()).matches("[a-z0-9][-a-z0-9]*")) {
+            throw new IllegalArgumentException("Expected a canonical concept IRI");
+        }
+    }
+
     private static void owner(PreparedStatement statement, int index, Account owner) throws SQLException {
         statement.setString(index, owner.issuer());
         statement.setString(index + 1, owner.subject());
@@ -113,8 +146,12 @@ public final class PlanningStore {
     private static Optional<Plan> result(PreparedStatement statement) throws SQLException {
         try (var row = statement.executeQuery()) {
             if (!row.next()) return Optional.empty();
-            return Optional.of(new Plan(row.getObject("id", UUID.class), row.getString("title"),
-                    row.getString("concept_iri"), row.getLong("revision")));
+            return Optional.of(plan(row));
         }
+    }
+
+    private static Plan plan(java.sql.ResultSet row) throws SQLException {
+        return new Plan(row.getObject("id", UUID.class), row.getString("title"),
+                row.getString("concept_iri"), row.getLong("revision"));
     }
 }
